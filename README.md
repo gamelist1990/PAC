@@ -5,8 +5,8 @@
 プレイヤーの移動とサーバーの状態を照合し、不自然な動きや操作を検知します。管理者はゲーム内のチェスト型UIから検知、通知、補正、制裁を設定できます。
 
 <!-- pac-release-status:start -->
-**最新版:** `v0.1.0` · **対応Minecraft:** `26.3`（Paper）  
-**GitHub Releases 累計ダウンロード:** 初回リリース後に表示されます。
+**最新版:** `v0.1.1` · **対応Minecraft:** `26.3`（Paper）  
+[![Releases downloads](https://img.shields.io/github/downloads/gamelist1990/PAC/total?label=Releases%20downloads)](https://github.com/gamelist1990/PAC/releases) · [最新版をダウンロード](https://github.com/gamelist1990/PAC/releases/latest)
 <!-- pac-release-status:end -->
 
 > 対応するMinecraft版は上記の1バージョンです。新しい版への対応時は、配布ビルドとこの表示を一緒に更新します。
