@@ -1,0 +1,13 @@
+# PAC Bedrock movement prediction settings.
+# Other engine values are managed internally and do not need configuration.
+
+# Number of movement ticks retained for prediction corrections.
+player-rewind-history-size-ticks: 20
+
+# Minimum client/server position difference that triggers a correction.
+# Smaller values are stricter. Values below 5.0E-5 are not recommended.
+player-position-acceptance-threshold: 1.0E-4
+
+# Minimum prediction difference required before PAC reports a violation.
+# Corrections below this value may still be applied silently.
+differ-till-alert: 0.0

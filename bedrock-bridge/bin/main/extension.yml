@@ -1,0 +1,6 @@
+id: pacbridge
+name: PAC-Bedrock
+main: ac.boar.geyser.GeyserBoar
+api: 2.11.0
+version: '${version}'
+authors: [PEX, oryxel]

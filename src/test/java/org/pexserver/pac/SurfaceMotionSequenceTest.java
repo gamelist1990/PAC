@@ -1,0 +1,145 @@
+package org.pexserver.pac;
+
+import org.junit.jupiter.api.Test;
+import org.pexserver.pac.movement.MotionEnvironment;
+import org.pexserver.pac.movement.SurfaceMotionSequence;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+class SurfaceMotionSequenceTest {
+    private static MotionEnvironment.Snapshot surface(double y, long at,
+                                                       boolean wall, boolean liquid) {
+        return new MotionEnvironment.Snapshot(false, false, false, false, false,
+                0, 0.1, 0, y, 0, 1, at, wall, liquid);
+    }
+
+    private static MotionEnvironment.Snapshot supportedWaterEdge(double y, long at) {
+        return new MotionEnvironment.Snapshot(true, false, false, false, false,
+                0, 0.1, 0, y, 0, 1, at, false, true);
+    }
+
+    @Test void repeatedSpiderRiseTriggersOnlyAfterNormalJumpEnvelope() {
+        var sequence = new SurfaceMotionSequence();
+        sequence.accept(true, 0, 64, 0, false, surface(64, 1000, true, false), 1000);
+        for (int step = 1; step < 8; step++) {
+            long at = 1000 + step * 50L;
+            assertEquals(SurfaceMotionSequence.Anomaly.NONE,
+                    sequence.accept(true, 0, 64 + step * 0.2, 0, false,
+                            surface(64 + step * 0.2, at, true, false), at));
+        }
+        assertEquals(SurfaceMotionSequence.Anomaly.WALL_CLIMB,
+                sequence.accept(true, 0, 65.6, 0, false,
+                        surface(65.6, 1400, true, false), 1400));
+    }
+
+    @Test void deceleratingVanillaLaunchBesideWallIsNotSpider() {
+        var sequence = new SurfaceMotionSequence();
+        double y = 64;
+        sequence.accept(true, 0, y, 0, false, surface(y, 1000, true, false), 1000);
+        double dy = 0.8;
+        for (int step = 1; step <= 16; step++) {
+            y += dy;
+            long at = 1000 + step * 50L;
+            assertEquals(SurfaceMotionSequence.Anomaly.NONE,
+                    sequence.accept(true, 0, y, 0, false,
+                            surface(y, at, true, false), at));
+            dy = (dy - 0.08) * 0.98;
+        }
+    }
+
+    @Test void liquidGroundClaimsRequireRepeatedUnsupportedPackets() {
+        var sequence = new SurfaceMotionSequence();
+        sequence.accept(true, 0, 64, 0, true, surface(64, 1000, false, true), 1000);
+        for (int step = 1; step < 4; step++) {
+            long at = 1000 + step * 50L;
+            assertEquals(SurfaceMotionSequence.Anomaly.NONE,
+                    sequence.accept(true, 0, 64.05, 0, true,
+                            surface(64.05, at, false, true), at));
+        }
+        assertEquals(SurfaceMotionSequence.Anomaly.LIQUID_GROUND_CLAIM,
+                sequence.accept(true, 0, 64.05, 0, true,
+                        surface(64.05, 1200, false, true), 1200));
+    }
+
+    @Test void alternatingJesusBypassOffsetsStillAccumulateLiquidGroundClaims() {
+        var sequence = new SurfaceMotionSequence();
+        sequence.accept(true, 0, 64.0, 0, true,
+                surface(64.0, 1000, false, true), 1000);
+        for (int step = 1; step < 4; step++) {
+            long at = 1000 + step * 50L;
+            double y = step % 2 == 1 ? 64.05 : 64.0;
+            assertEquals(SurfaceMotionSequence.Anomaly.NONE,
+                    sequence.accept(true, 0, y, 0, true,
+                            surface(y, at, false, true), at));
+        }
+        assertEquals(SurfaceMotionSequence.Anomaly.LIQUID_GROUND_CLAIM,
+                sequence.accept(true, 0, 64.05, 0, true,
+                surface(64.05, 1200, false, true), 1200));
+    }
+
+    @Test void liquidOverlapDoesNotFlagWhenGroundStateConfirmsSolidSupport() {
+        var sequence = new SurfaceMotionSequence();
+        sequence.accept(true, 0, 64, 0, true, supportedWaterEdge(64, 1000), 1000);
+        for (int step = 1; step <= 6; step++) {
+            long at = 1000 + step * 50L;
+            assertEquals(SurfaceMotionSequence.Anomaly.NONE,
+                    sequence.accept(true, 0, 64, 0, true,
+                            supportedWaterEdge(64, at), at));
+        }
+    }
+
+    @Test void staleWaterSurfaceSnapshotDoesNotFollowPlayerOntoNearbyStep() {
+        var sequence = new SurfaceMotionSequence();
+        sequence.accept(true, 0, 64, 0, true, surface(64, 1000, false, true), 1000);
+        for (int step = 1; step <= 8; step++) {
+            long at = 1000 + step * 50L;
+            double packetY = 64 + (step % 2 == 0 ? 0.25 : 0);
+            assertEquals(SurfaceMotionSequence.Anomaly.NONE,
+                    sequence.accept(true, 0.5, packetY, 0, true,
+                            surface(64, at, false, true), at),
+                    "a broad proximity match must not reuse a nearby water sample for a land step");
+        }
+    }
+
+    @Test void snowShoeGroundClaimsNeedRepeatedPowderSnowContactWithoutLeatherBoots() {
+        var sequence = new SurfaceMotionSequence();
+        sequence.accept(true, 0, 64, 0, true, surface(64, 1000, false, false),
+                false, 1000);
+        for (int step = 1; step < 4; step++) {
+            long at = 1000 + step * 50L;
+            assertEquals(SurfaceMotionSequence.Anomaly.NONE,
+                    sequence.accept(true, 0, 64, 0, true, surface(64, at, false, false),
+                            true, at));
+        }
+        assertEquals(SurfaceMotionSequence.Anomaly.POWDER_SNOW_WALK,
+                sequence.accept(true, 0, 64, 0, true,
+                        surface(64, 1200, false, false), true, 1200));
+    }
+
+    @Test void powderSnowWalkingIsIgnoredWhenThePlayerHasLeatherBoots() {
+        var sequence = new SurfaceMotionSequence();
+        sequence.accept(true, 0, 64, 0, true, surface(64, 1000, false, false),
+                false, 1000);
+        for (int step = 1; step <= 8; step++) {
+            long at = 1000 + step * 50L;
+            assertEquals(SurfaceMotionSequence.Anomaly.NONE,
+                    sequence.accept(true, 0, 64, 0, true,
+                            surface(64, at, false, false), false, at));
+        }
+    }
+
+    @Test void snowShoeMovementIsDetectedEvenWithoutGroundFlag() {
+        var sequence = new SurfaceMotionSequence();
+        sequence.accept(true, 0, 64, 0, false, surface(64, 1000, false, false),
+                false, 1000);
+        for (int step = 1; step < 4; step++) {
+            long at = 1000 + step * 50L;
+            assertEquals(SurfaceMotionSequence.Anomaly.NONE,
+                    sequence.accept(true, step * 0.1, 64, 0, false,
+                            surface(64, at, false, false), true, at));
+        }
+        assertEquals(SurfaceMotionSequence.Anomaly.POWDER_SNOW_WALK,
+                sequence.accept(true, 0.4, 64, 0, false,
+                        surface(64, 1200, false, false), true, 1200));
+    }
+}

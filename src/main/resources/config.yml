@@ -1,0 +1,209 @@
+alerts:
+  enabled: true
+  prefix: '&8[&cPAC&8] &7'
+  minimum-interval-ms: 1000
+config-version: 15
+api:
+  # External plugins can only change PAC settings when this is true.
+  control-authority: false
+  # World detector overrides are keyed by the world's UUID and fall back to global detector settings.
+  world-overrides: {}
+debug:
+  recording-mode: false
+killaura:
+  # MX's default keeps its cinematic-sensitive modules active unless explicitly ignored.
+  ignore-cinematic: false
+detectors:
+  # Standard detectors start enabled and eligible for automatic BAN; experimental xray/noclip start disabled.
+  # Set ban-enabled: false on an individual detector to disable its automatic BAN.
+  # Each detector also accepts kick-enabled: false and kick-score-threshold: 10.
+  # Enable kicks per detector from /pac ui; bedrock-prediction does not auto-kick.
+  invalid-movement:
+    enabled: true
+    ban-enabled: true
+    cancel: true
+    alert-score-threshold: 1
+  packet-flood:
+    enabled: true
+    ban-enabled: true
+    cancel: true
+    max-per-second: 240
+    alert-score-threshold: 3
+  invalid-pitch:
+    enabled: true
+    ban-enabled: true
+    cancel: true
+    alert-score-threshold: 1
+  motion-prediction:
+    enabled: true
+    ban-enabled: true
+    cancel: true
+    alert-score-threshold: 1
+    offset-threshold: 0.04
+    buffer-threshold: 8
+  air-prediction:
+    enabled: true
+    ban-enabled: true
+    cancel: true
+    alert-score-threshold: 1
+    offset-threshold: 0.06
+    horizontal-offset-threshold: 0.015
+    buffer-threshold: 6
+    elytra-offset-threshold: 0.035
+    elytra-buffer-threshold: 6
+  timer-prediction:
+    enabled: true
+    ban-enabled: true
+    cancel: true
+    alert-score-threshold: 1
+  surface-prediction:
+    enabled: true
+    ban-enabled: true
+    cancel: true
+    alert-score-threshold: 1
+  water-flow-prediction:
+    enabled: true
+    ban-enabled: true
+    cancel: true
+    alert-score-threshold: 1
+  water-motion-prediction:
+    enabled: true
+    ban-enabled: true
+    cancel: true
+    alert-score-threshold: 1
+    offset-threshold: 0.05
+    buffer-threshold: 6
+  boat-flight:
+    enabled: true
+    ban-enabled: true
+    cancel: true
+    hover-ticks: 8
+    fast-ticks: 4
+    alert-score-threshold: 1
+  fast-place:
+    enabled: true
+    ban-enabled: true
+    cancel: true
+    alert-score-threshold: 1
+  fast-break:
+    enabled: true
+    ban-enabled: true
+    cancel: true
+    alert-score-threshold: 1
+  nuker:
+    enabled: true
+    ban-enabled: true
+    cancel: true
+    max-packets-per-second: 80
+    max-targets-per-second: 24
+    alert-score-threshold: 1
+  anti-hunger:
+    enabled: true
+    ban-enabled: true
+    cancel: true
+    alert-score-threshold: 1
+  inventory-move:
+    enabled: true
+    ban-enabled: true
+    cancel: true
+    alert-score-threshold: 1
+  bedrock-prediction:
+    # Also controls Geyser movement prediction and rewinds through PAC's bridge.
+    enabled: true
+    ban-enabled: true
+    alert-score-threshold: 1
+  crash-chest:
+    enabled: true
+    ban-enabled: true
+    cancel: true
+    alert-score-threshold: 1
+    kick-enabled: false
+    kick-score-threshold: 10
+  scaffold:
+    enabled: true
+    ban-enabled: true
+    cancel: true
+    alert-score-threshold: 1
+    kick-enabled: false
+    kick-score-threshold: 10
+  reach:
+    enabled: true
+    ban-enabled: true
+    cancel: true
+    alert-score-threshold: 1
+    kick-enabled: false
+    kick-score-threshold: 10
+  kill-aura:
+    enabled: true
+    ban-enabled: true
+    cancel: true
+    alert-score-threshold: 1
+    kick-enabled: false
+    kick-score-threshold: 10
+  critical-packet:
+    enabled: true
+    ban-enabled: true
+    cancel: true
+    alert-score-threshold: 1
+    kick-enabled: false
+    kick-score-threshold: 10
+  xray:
+    # Experimental statistical detector; enable manually from /pac ui.
+    enabled: false
+    ban-enabled: true
+    cancel: false
+    alert-score-threshold: 1
+    kick-enabled: false
+    kick-score-threshold: 10
+    window-seconds: 120
+    minimum-blocks: 60
+    rare-high-ratio: 0.08
+    rare-medium-ratio: 0.05
+    common-high-ratio: 0.15
+    common-medium-ratio: 0.08
+    suspicion-threshold: 18
+    rare-jump-distance: 10
+  noclip:
+    # Experimental swept-AABB wall-phase check; enable manually from /pac ui.
+    enabled: false
+    ban-enabled: true
+    cancel: true
+    alert-score-threshold: 1
+    kick-enabled: false
+    kick-score-threshold: 10
+    phase-flags-required: 5
+    collision-tolerance: 0.10
+    max-distance: 10
+  simulation-killaura:
+    # Java-only block collision replay for attacks that cannot reach a target through vanilla geometry.
+    enabled: true
+    ban-enabled: true
+    cancel: true
+    alert-score-threshold: 1
+    kick-enabled: false
+    kick-score-threshold: 10
+punishments:
+  rollback-enabled: true
+  probation-enabled: true
+  score-threshold: 25
+  daily-risk-allowance: 3.0
+  trust-loss-per-action: 20.0
+  # 不正検知がない1日ごとの信頼性回復量。
+  trust-recovery-per-clean-day: 5.0
+  # 制裁時の信頼性がこの値以上なら6日BAN。それ未満なら30日BAN。
+  six-day-trust-threshold: 60.0
+  # 制裁時の信頼性がこの値未満なら永久BAN。
+  permanent-trust-threshold: 25.0
+  # Banned / Disconnected と期限表示は固定です。ここでは後ろに追加する案内文だけを設定します。
+  # & color codes and multiple lines are supported.
+  messages:
+    ban-suffix: "&7Support: &bdiscord.gg/xxxx"
+    kick-suffix: ""
+scoring:
+  half-life-seconds: 30
+  repeat-window-seconds: 2
+  repeat-multiplier: 1.5
+  maximum-multiplier: 8
+  maximum-score: 1000
+storage:
+  busy-timeout-ms: 3000

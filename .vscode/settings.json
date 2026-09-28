@@ -1,0 +1,16 @@
+{
+    "yaml.disableSchemaDetection": [
+        "**/.github/workflows/*.yml",
+        "**/.github/workflows/*.yaml",
+        "**/.gitea/workflows/*.yml",
+        "**/.gitea/workflows/*.yaml",
+        "**/.forgejo/workflows/*.yml",
+        "**/.forgejo/workflows/*.yaml"
+    ],
+    "yaml.schemas": {
+        "file:///c%3A/Users/issei/.vscode/extensions/continue.continue-1.2.0-win32-x64/config-yaml-schema.json": [
+            ".continue/**/*.yaml"
+        ],
+        "https://www.schemastore.org/bukkit-plugin.json": "file:///c%3A/Users/PC_User/IdeaProjects/PAC/src/main/resources/plugin.yml"
+    }
+}

@@ -1,0 +1,37 @@
+plugins {
+    id 'java'
+    id 'com.gradleup.shadow'
+}
+
+group = 'org.pexserver.pac'
+version = rootProject.version
+
+repositories {
+    mavenCentral()
+    maven { url = 'https://repo.opencollab.dev/main/' }
+}
+
+dependencies {
+    compileOnly 'org.geysermc.geyser:api:2.11.2-SNAPSHOT'
+    compileOnly('org.geysermc.geyser:core:2.11.2-SNAPSHOT') { transitive = false }
+    compileOnly 'org.cloudburstmc.protocol:bedrock-connection:3.0.0.Beta12-SNAPSHOT'
+    compileOnly 'org.geysermc.mcprotocollib:protocol:1.21.11-20260217.182735-13'
+    compileOnly 'com.google.guava:guava:33.6.0-jre'
+    compileOnly 'com.google.code.gson:gson:2.3.1'
+    compileOnly 'org.jetbrains:annotations:26.1.0'
+    compileOnly 'org.projectlombok:lombok:1.18.48'
+    annotationProcessor 'org.projectlombok:lombok:1.18.48'
+    implementation 'it.unimi.dsi:fastutil:8.5.15'
+    implementation 'com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:2.15.2'
+}
+
+java { toolchain.languageVersion = JavaLanguageVersion.of(21) }
+tasks.withType(JavaCompile).configureEach { options.encoding = 'UTF-8'; options.release = 21 }
+tasks.processResources { filesMatching('extension.yml') { expand(version: project.version) } }
+tasks.shadowJar {
+    archiveFileName = 'pac-bedrock-geyser.jar'
+    relocate 'it.unimi.dsi.fastutil', 'ac.boar.shaded.fastutil'
+    relocate 'com.fasterxml.jackson', 'ac.boar.shaded.jackson'
+    relocate 'org.yaml.snakeyaml', 'ac.boar.shaded.snakeyaml'
+}
+tasks.build { dependsOn tasks.shadowJar }

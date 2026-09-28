@@ -1,0 +1,85 @@
+plugins {
+    id 'java'
+    id 'io.papermc.paperweight.userdev' version '2.0.0-beta.23'
+    id 'com.gradleup.shadow' version '8.3.10'
+}
+
+group = 'org.pexserver.pac'
+version = project.findProperty('version')
+
+repositories {
+    mavenCentral()
+    maven { url = 'https://repo.papermc.io/repository/maven-public/' }
+    maven { url = 'https://repo.codemc.io/repository/maven-releases/' }
+    maven { url = 'https://repo.codemc.io/repository/maven-snapshots/' }
+    maven { url = 'https://repo.opencollab.dev/main/' }
+}
+
+dependencies {
+    paperweight.paperDevBundle('26.3.build.+')
+    compileOnly 'org.projectlombok:lombok:1.18.46'
+    annotationProcessor 'org.projectlombok:lombok:1.18.46'
+    compileOnly 'com.github.retrooper:packetevents-spigot:2.14.0'
+    testImplementation 'com.github.retrooper:packetevents-spigot:2.14.0'
+    compileOnly 'org.geysermc.floodgate:api:2.2.5-SNAPSHOT'
+    compileOnly 'org.geysermc.geyser:api:2.11.2-SNAPSHOT'
+    implementation 'org.xerial:sqlite-jdbc:3.53.4.0'
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.11.4'
+}
+
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(25)
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = 25
+}
+
+tasks.processResources {
+    filesMatching('plugin.yml') { expand(version: project.version) }
+    exclude 'ml/m1.dat', 'ml/m2.dat', 'ml/m3.dat', 'ml/m4.dat', 'ml/m5.dat', 'ml/m_huge1.dat', 'ml/m_huge2.dat'
+}
+
+tasks.shadowJar {
+    archiveClassifier.set('shaded')
+    mergeServiceFiles()
+}
+
+tasks.jar { archiveClassifier.set('plain') }
+
+tasks.register('packagePac', Jar) {
+    description = 'Packages the shaded PAC plugin with its embedded Geyser extension.'
+    dependsOn tasks.shadowJar, ':bedrock-bridge:shadowJar'
+    archiveClassifier.set('')
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from({ zipTree(tasks.shadowJar.archiveFile.get().asFile) })
+    from(project(':bedrock-bridge').layout.buildDirectory.file('libs/pac-bedrock-geyser.jar')) {
+        into 'embedded'
+    }
+    from('LICENSE') {
+        into 'licenses'
+        rename { 'PAC-LICENSE' }
+    }
+    from('third-party/Boar-LICENSE') {
+        into 'licenses'
+    }
+    from('third-party/MX-LICENSE') {
+        into 'licenses'
+    }
+}
+
+tasks.build { dependsOn tasks.packagePac }
+tasks.test { useJUnitPlatform() }
+
+tasks.register('bundleBedrock', Zip) {
+    description = 'Packages the PAC Paper plugin with its embedded Bedrock prediction engine.'
+    dependsOn tasks.packagePac
+    archiveFileName = 'PAC-with-Bedrock.zip'
+    destinationDirectory = layout.buildDirectory.dir('distributions')
+    into('plugins') { from(tasks.packagePac) }
+    into('licenses') { from('LICENSE'); from('third-party/Boar-LICENSE'); from('third-party/MX-LICENSE') }
+    from('bedrock-bridge/INSTALL.md')
+    from('bedrock-bridge/UPSTREAM.md')
+}

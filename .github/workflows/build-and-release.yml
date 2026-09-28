@@ -1,0 +1,106 @@
+name: Build and release
+
+on:
+  push:
+    branches: ['**']
+  workflow_dispatch:
+
+concurrency:
+  group: pac-build-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.event_name != 'push' || !contains(github.event.head_commit.message, '[skip ci]')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Check out source and history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Java 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Advance the version for each pushed commit
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        id: release
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$BEFORE_SHA" =~ ^0+$ ]] || ! git cat-file -e "$BEFORE_SHA^{commit}" 2>/dev/null; then
+            COMMIT_COUNT=1
+          else
+            COMMIT_COUNT=$(git log --format=%s "$BEFORE_SHA..$GITHUB_SHA" \
+              | grep -vc '\[skip ci\]' || true)
+          fi
+          if (( COMMIT_COUNT < 1 )); then
+            echo 'No source commits to release' >&2
+            exit 1
+          fi
+          python3 scripts/update_release_metadata.py \
+            --bump-commits "$COMMIT_COUNT" --repository "$REPOSITORY" \
+            --github-output "$GITHUB_OUTPUT"
+
+      - name: Build and test
+        shell: bash
+        run: |
+          chmod +x gradlew
+          ./gradlew build
+
+      - name: Select the distributable JAR
+        id: package
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION=$(sed -n 's/^version=//p' gradle.properties | head -1)
+          PACKAGE="build/libs/PAC-$VERSION.jar"
+          test -s "$PACKAGE"
+          echo "path=$PACKAGE" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PAC-${{ github.sha }}
+          path: ${{ steps.package.outputs.path }}
+          if-no-files-found: error
+
+      - name: Commit release metadata and tag
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add gradle.properties README.md
+          git commit -m "chore: release v${{ steps.release.outputs.version }} [skip ci]"
+          git tag "v${{ steps.release.outputs.version }}"
+          git push --atomic origin HEAD:main "refs/tags/v${{ steps.release.outputs.version }}"
+
+      - name: Publish GitHub Release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.release.outputs.version }}
+          name: PAC v${{ steps.release.outputs.version }}
+          body: |
+            Paper / Minecraft ${{ steps.release.outputs.minecraft }} 対応。
+
+            `PAC-${{ steps.release.outputs.version }}.jar` をダウンロードし、サーバーの `plugins/` に配置してください。
+            PacketEvents 2.14.0 が必要です。Bedrock対応にはGeyser-Spigotも必要です。
+          files: ${{ steps.package.outputs.path }}
+          fail_on_unmatched_files: true
+          generate_release_notes: true
