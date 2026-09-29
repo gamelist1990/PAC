@@ -14,10 +14,10 @@ Status meanings:
 | --- | --- | --- |
 | AirJump | Covered | Air vertical recurrence; mid-air 0.42Y re-jump regression |
 | Anchor | Not a violation by itself | Input automation toward a location |
-| AntiBounce | Partial | Ordinary-air gravity is covered; special bounce-block response still needs dedicated restitution replay |
+| AntiBounce | Covered | Vanilla generalized restitution is replayed from the server block state; suppressed Slime/Bed rebound is detected on the following physics frame |
 | AntiLevitation | Covered | Active levitation / slow-falling state is included in air recurrence |
 | AvoidHazards | Not a violation by itself | Input/pathing automation |
-| BlockBounce | Partial | Excessive ordinary-ground takeoff is covered, but bouncy support blocks are intentionally excluded from the ordinary-ground recurrence |
+| BlockBounce | Covered | Surface jump factor and generalized restitution are sampled server-side; client-added jump motion on Honey/Slime/Bed exceeds the takeoff envelope |
 | BlockWalk | Partial | Unsupported-air ground claims, hover and collision checks cover impossible support; unusual thin-block transitions remain collision-dependent |
 | Clip | Covered | Swept-AABB noclip prevention, now enabled by default with auto-ban disabled |
 | ElytraFly | Covered | Elytra recurrence, collision replay and residual buffering |
@@ -50,7 +50,7 @@ Status meanings:
 | TerrainSpeed | Covered | Current nextgen IceSpeed, WaterSpeed and FastClimb paths are covered by friction/water prediction and climb-state enforcement |
 | TridentBoost | Covered | Paper Riptide event provides the authoritative vanilla impulse |
 | VehicleBoost | Covered | A dedicated post-dismount window rejects the current 2.0 horizontal / 1.0 vertical self-boost while preserving vehicle momentum and invalidating on external server motion |
-| VehicleControl | Partial | BoatFlight is modeled. Non-boat controlled vehicles now get repeated extreme-motion telemetry, but remain alert-only because custom server vehicles can legitimately exceed vanilla transport envelopes |
+| VehicleControl | Covered for current default bypass paths | BoatFlight preserves evidence across Rehook, extreme VEHICLE_MOVE packets are rejected before vanilla applies them, unsaddled EntityControl packets are rejected using the server controlling-passenger state, and gravity-bound living vehicles validate vertical recurrence. Generic custom/non-living vehicle telemetry remains non-punitive |
 
 ## Concrete hardening added in PR #6
 
@@ -67,12 +67,17 @@ Status meanings:
 - bounded target hitbox history for reach; reported ping no longer grants raw geometric reach
 - post-dismount VehicleBoost rejection plus conservative non-boat VehicleControl telemetry
 - vehicle heuristics are explicitly ineligible for automatic BAN/KICK
+- 26.2+ generalized Slime/Bed restitution and Honey jump-factor replay
+- packet-level VEHICLE_MOVE envelope before vanilla applies extreme client coordinates
+- server controlling-passenger authority enforcement for EntityControl
+- living-vehicle vertical gravity/drag recurrence for low-speed VehicleControl
+- BoatFlight evidence continuity across short LiquidBounce Rehook cycles
+- sub-block Phase tolerance tightened to 0.03 while keeping noclip auto-ban disabled
 
 ## Remaining high-value work
 
-1. **Bounce restitution** — AntiBounce / BlockBounce still need a dedicated Slime/Bed/Honey vertical restitution replay. PAC currently keeps these special vertical surfaces out of the ordinary takeoff check rather than guessing.
-2. **Full non-boat vehicle physics** — the current generic VehicleControl signal is intentionally alert-only. A punitive horse/rideable model should be added only after reproducing each vanilla vehicle's steering, saddle and jump rules.
-3. **Latency confidence** — PingSpoof can be made harmless to reach compensation, but a keepalive delay is not distinguishable from real network latency by itself. PAC therefore caps rewind and rewinds actual target history instead of treating high ping as cheating.
-4. **Live calibration** — replay real vanilla traces for terrain, dismount and high-latency combat transitions before promoting any conservative signal to automatic punishment.
+1. **Non-living/custom vehicle physics** — current LiquidBounce default/high-speed VehicleControl and server-authority bypasses are covered, but minecart/custom-plugin vehicle motion remains conservative because server plugins may intentionally override vanilla transport rules.
+2. **Latency confidence** — the current LiquidBounce PingSpoof delays only incoming keepalive/ping packets. PAC no longer converts reported RTT into extra geometric reach and caps target-history rewind, but intentionally does not label latency itself as cheating because true network delay is observationally ambiguous.
+3. **Live calibration** — replay real vanilla 26.3 traces for Slime/Bed restitution, Honey takeoff, vehicle transitions and high-latency combat before making the conservative vehicle/reach signals more punitive.
 
 A module listed as “Not a violation by itself” is intentionally not fingerprinted. PAC should detect impossible outcomes, not the presence of a specific client.
