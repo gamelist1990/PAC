@@ -852,7 +852,7 @@ public final class MotionEnvironment implements Listener {
         Location location = player.getLocation();
         double frictionValue = frictionModifier == null ? Double.NaN : frictionModifier.getValue();
         float groundFriction = supported && usableGroundSpeed && knownGround && state.onGround()
-                ? groundFriction(player, frictionValue, state.supportY()) : Float.NaN;
+                ? groundFriction(player, frictionValue, state.supportY(), state.consecutiveTicks()) : Float.NaN;
         float velocityMultiplier = supported && knownGround && state.onGround()
                 ? groundVelocityMultiplier(player, movementEfficiencyValue) : 1.0f;
         // A moving entity's collision box is a valid floor, but its client-side
@@ -1126,7 +1126,8 @@ public final class MotionEnvironment implements Listener {
     }
 
     /** Friction from the exact NMS support block; collision snapshots model its shape. */
-    private float groundFriction(Player player, double modifier, double supportY) {
+    private float groundFriction(Player player, double modifier, double supportY,
+                                 int consecutiveGroundTicks) {
         if (!Double.isFinite(supportY) || !Double.isFinite(modifier) || modifier < 0 || modifier > 4)
             return Float.NaN;
         var handle = ((CraftPlayer) player).getHandle();
@@ -1138,7 +1139,7 @@ public final class MotionEnvironment implements Listener {
         float blockSpeed = nmsBlock.getSpeedFactor();
         float friction = modifiedFriction(nmsBlock.getFriction(), modifier);
         float jumpFactor = nmsBlock.getJumpFactor();
-        if (nmsBlock.getBounceRestitution() != 0.0f
+        if (!stableBounceGroundPredictable(nmsBlock.getBounceRestitution(), consecutiveGroundTicks)
                 || !Float.isFinite(blockSpeed) || blockSpeed <= 0 || blockSpeed > 4
                 || !Float.isFinite(jumpFactor) || jumpFactor < 0 || jumpFactor > 4
                 || !Float.isFinite(friction))
@@ -1157,6 +1158,14 @@ public final class MotionEnvironment implements Listener {
             }
         }
         return hasSupport ? friction : Float.NaN;
+    }
+
+    static boolean stableBounceGroundPredictable(float restitution, int consecutiveGroundTicks) {
+        // Restitution only changes the landing response. Once collision support
+        // has remained grounded for multiple server ticks there is no active
+        // landing bounce, so horizontal ground physics can use the normal
+        // friction/velocity recurrence safely.
+        return restitution == 0.0f || consecutiveGroundTicks >= 2;
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
