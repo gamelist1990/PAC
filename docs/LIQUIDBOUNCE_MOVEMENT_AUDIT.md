@@ -33,7 +33,7 @@ Status meanings:
 | NoClip | Covered | Swept-AABB wall penetration rejection |
 | NoJumpDelay | Not a violation by itself | Precise repeated jump input is not illegal unless resulting movement violates physics |
 | NoPose | Not a violation by itself | A local pose/dimension presentation change is not punished on its own. Server pose/collision transitions are sampled and impossible movement still falls into collision/noclip prediction |
-| NoPush | Covered for current default entity/liquid paths | Fluid-current suppression and SINKING zero-Y behavior diverge from water prediction. Server-confirmed entity pushes now compare push-vs-no-push models across stable input and require four repeated high-confidence samples. Optional block/fishing-rod sources remain outcome-based |
+| NoPush | Covered for current nextgen sources | Fluid-current suppression and SINKING zero-Y behavior diverge from water prediction. Entity pushes use server-confirmed contact evidence; fishing-rod pulls are tracked as the exact additive vanilla impulse; BLOCKS reconstructs LocalPlayer's suffocating-block push-out geometry and only scores repeated failure to make any valid outward progress. |
 | NoSlow | Covered | Item use, sneaking, slowness attributes, water, powder snow and cobweb are modeled; Soul Sand/Honey block speed factors and Slime slipperiness are now replayed from server-authoritative terrain state |
 | NoWeb | Covered | Exact cobweb stuck multipliers plus sustained-speed evidence |
 | Parkour | Not a violation by itself | Edge jump automation is legal input |
@@ -73,11 +73,13 @@ Status meanings:
 - living-vehicle vertical gravity/drag recurrence for low-speed VehicleControl
 - BoatFlight evidence continuity across short LiquidBounce Rehook cycles
 - sub-block Phase tolerance tightened to 0.03 while keeping noclip auto-ban disabled
+- exact fishing-hook pull vector captured as additive client motion
+- NoPush BLOCKS detection mirrors the client's suffocating-block neighbor search and requires six stable suppressed frames
 
 ## Remaining high-value work
 
 1. **Custom/non-vanilla vehicle horizontal physics** — current LiquidBounce VehicleControl authority, large packet motion, living-vehicle vertical recurrence and airborne minecart gravity are covered. Plugin-defined custom vehicles can intentionally exceed vanilla transport rules, so their generic telemetry remains alert-only rather than becoming a setback/BAN signal.
-2. **Optional NoPush sources** — default entity/liquid suppression and SINKING are modeled. BLOCKS and FISHING_ROD are still judged through their resulting collision/velocity behavior instead of a dedicated source-specific replay.
-3. **Live calibration** — replay real vanilla 26.3 traces for Slime/Bed restitution, Honey takeoff, entity-contact pushes, vehicle transitions and high-latency combat before making the conservative vehicle/reach signals more punitive.
+2. **Live calibration** — replay real vanilla 26.3 traces for Slime/Bed restitution, Honey takeoff, block-push escape, entity-contact/fishing pulls, vehicle transitions and high-latency combat before making conservative telemetry more punitive.
+3. **Plugin-defined transport semantics** — arbitrary custom vehicle plugins can intentionally exceed vanilla horizontal motion while still using a vanilla Bukkit entity type. PAC should continue to consume explicit server velocity/teleport evidence rather than treating every custom transport outcome as a cheat.
 
 A module listed as “Not a violation by itself” is intentionally not fingerprinted. PAC should detect impossible outcomes, not the presence of a specific client.
