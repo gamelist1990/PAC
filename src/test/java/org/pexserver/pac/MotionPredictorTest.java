@@ -141,14 +141,15 @@ class MotionPredictorTest {
         var forward = new MotionPredictor.Input(true, false, false, false, false, false, false);
         var previous = new MotionPredictor.Motion(0, 0, 0.4);
         float terrainMultiplier = 0.4f;
-        double expected = 0.4 * (double) (0.6f * 0.91f * terrainMultiplier) + 0.1;
+        double acceleration = (double) (float) 0.1;
+        double expected = 0.4 * (double) (0.6f * 0.91f * terrainMultiplier) + acceleration;
 
         var vanillaTerrain = MotionPredictor.predictGroundInput(previous,
                 new MotionPredictor.Motion(0, 0, expected), 0, 0.1,
                 false, false, 0.6f, 0.91f, terrainMultiplier, forward);
         assertEquals(0, vanillaTerrain.offset(), 1e-12);
 
-        double bypass = 0.4 * (double) (0.6f * 0.91f) + 0.1;
+        double bypass = 0.4 * (double) (0.6f * 0.91f) + acceleration;
         var noSlow = MotionPredictor.predictGroundInput(previous,
                 new MotionPredictor.Motion(0, 0, bypass), 0, 0.1,
                 false, false, 0.6f, 0.91f, terrainMultiplier, forward);
