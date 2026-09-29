@@ -76,10 +76,8 @@ class VerticalSurfaceMotionWindowTest {
         for (int cycle = 0; cycle < 3; cycle++) {
             long land = 1100 + cycle * 150L;
             window.accept(true, 0, 64.0, 0,
-                    specialGround(64.0, 0.42f, 1.0f, land).withSprinting(false, 0.1),
+                    sneakingSpecialGround(64.0, 0.42f, 1.0f, land),
                     land, false);
-            // Snapshot constructor helper below returns non-sneaking, so use
-            // a dedicated sneaking snapshot for the flat post-landing frame.
             assertEquals(VerticalSurfaceMotionWindow.Anomaly.NONE,
                     window.accept(true, 0, 64.0, 0,
                             sneakingSpecialGround(64.0, 0.42f, 1.0f, land + 50),
