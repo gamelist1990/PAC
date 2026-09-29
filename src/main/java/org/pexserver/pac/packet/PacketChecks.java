@@ -11,8 +11,10 @@ import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientCl
 import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientCloseWindow;
 import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientPlayerInput;
 import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientTeleportConfirm;
+import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientVehicleMove;
 import org.pexserver.pac.PacPlugin;
 import org.pexserver.pac.check.shared.KillAuraCheck;
+import org.pexserver.pac.check.shared.VehicleMovementCheck;
 import org.pexserver.pac.check.java.packet.CriticalPacketCheck;
 import org.pexserver.pac.check.java.packet.PacketFloodCheck;
 import org.pexserver.pac.check.java.movement.TimerPredictionCheck;
@@ -190,6 +192,21 @@ public final class PacketChecks implements PacketListener, Listener {
                 if (!event.isCancelled()
                         && plugin.checks().get("air-prediction") instanceof AirPredictionCheck airPrediction)
                     airPrediction.onAttackPacket(uuid);
+            }
+            return;
+        }
+        if (event.getPacketType() == PacketType.Play.Client.VEHICLE_MOVE) {
+            UUID uuid = eventUuid;
+            if (uuid == null || plugin.isExempt(uuid)) return;
+            if (plugin.checks().get("vehicle-movement") instanceof VehicleMovementCheck vehicleMovement
+                    && plugin.enabled(uuid, vehicleMovement)) {
+                var packet = new WrapperPlayClientVehicleMove(event);
+                var position = packet.getPosition();
+                if (vehicleMovement.onVehicleMovePacket(uuid,
+                        position.getX(), position.getY(), position.getZ(),
+                        System.currentTimeMillis())) {
+                    event.setCancelled(true);
+                }
             }
             return;
         }
