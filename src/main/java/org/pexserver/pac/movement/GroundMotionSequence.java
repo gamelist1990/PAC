@@ -33,6 +33,7 @@ public final class GroundMotionSequence {
     private float stuckHorizontalMultiplier = 1.0f;
     private float stuckVerticalMultiplier = 1.0f;
     private float blockSpeedFactor = 1.0f;
+    private boolean specialVerticalSurface;
     private float yaw;
     private boolean takeoffArmed;
     private double takeoffY;
@@ -74,6 +75,7 @@ public final class GroundMotionSequence {
             stuckHorizontalMultiplier = environment.stuckHorizontalMultiplier();
             stuckVerticalMultiplier = environment.stuckVerticalMultiplier();
             blockSpeedFactor = environment.blockSpeedFactor();
+            specialVerticalSurface = environment.specialVerticalSurface();
             takeoffJumpStrength = environment.jumpStrength();
         }
     }
@@ -213,9 +215,11 @@ public final class GroundMotionSequence {
                 && collisions.blockGeometryComplete() && now >= collisions.capturedAt()
                 && now - collisions.capturedAt() <= 200;
         boolean takeoffFrame = !externalTransition && !combatImpulseSettling
+                && !specialVerticalSurface
+                && environment != null && !environment.specialVerticalSurface()
                 && verifiedCollisionGeometry
                 && (collisions == null || !collisions.hardEntityCollisionPossible())
-                && skippedFrames == 0 && takeoffArmed && environment != null
+                && skippedFrames == 0 && takeoffArmed
                 && environment.levitationAmplifier() < 0 && initialized
                 && physicsFrames == 1 && lastFrameAt > 0 && now - lastFrameAt < 250
                 && now - takeoffArmedAt < 250 && Math.abs(y - takeoffY) < 0.03
@@ -248,6 +252,7 @@ public final class GroundMotionSequence {
                 && stuckHorizontalMultiplier == environment.stuckHorizontalMultiplier()
                 && stuckVerticalMultiplier == environment.stuckVerticalMultiplier()
                 && blockSpeedFactor == environment.blockSpeedFactor()
+                && specialVerticalSurface == environment.specialVerticalSurface()
                 && takeoffJumpStrength == environment.jumpStrength()
                 && Math.abs(movementSpeed - environment.movementSpeed()) < 1.0E-6;
         boolean sameGroundModel = sameGroundConditions && Math.abs(dy) <= 0.03;
@@ -297,12 +302,14 @@ public final class GroundMotionSequence {
             stuckHorizontalMultiplier = environment.stuckHorizontalMultiplier();
             stuckVerticalMultiplier = environment.stuckVerticalMultiplier();
             blockSpeedFactor = environment.blockSpeedFactor();
+            specialVerticalSurface = environment.specialVerticalSurface();
         }
         // The server can already report on-ground on the final *upward* frame
         // of a jump onto a higher block. That frame is a landing, not a new
         // grounded takeoff baseline. Arming here makes the next small Y delta
         // look like an impossible jump (especially beside a wall).
-        if (ordinary && !combatImpulseSettling && (firstPosition || dy <= 0.03)
+        if (ordinary && !specialVerticalSurface && !combatImpulseSettling
+                && (firstPosition || dy <= 0.03)
                 && environment.near(nextX, nextY, nextZ)
                 && Math.abs(nextY - environment.y()) < 0.03) {
             takeoffArmed = true;
