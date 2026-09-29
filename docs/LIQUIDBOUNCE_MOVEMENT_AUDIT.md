@@ -34,7 +34,7 @@ Status meanings:
 | NoJumpDelay | Not a violation by itself | Precise repeated jump input is not illegal unless resulting movement violates physics |
 | NoPose | Partial | Pose transitions and collision dimensions are sampled; protocol/pose-only visual differences are not automatically punishable |
 | NoPush | Partial | Server velocity/knockback, entity-push allowance and water flow are modeled; not every vehicle/block push source has a dedicated replay |
-| NoSlow | Partial | Item use, sneaking, slowness attributes, water, powder snow and cobweb are modeled; special block speed-factor terrain remains an audit target |
+| NoSlow | Covered | Item use, sneaking, slowness attributes, water, powder snow and cobweb are modeled; Soul Sand/Honey block speed factors and Slime slipperiness are now replayed from server-authoritative terrain state |
 | NoWeb | Covered | Exact cobweb stuck multipliers plus sustained-speed evidence |
 | Parkour | Not a violation by itself | Edge jump automation is legal input |
 | ReverseStep | Covered | Vertical air/gravity recurrence; Strict -1.0Y regression |
@@ -47,10 +47,10 @@ Status meanings:
 | Step | Covered | Collision-aware ground replay + impossible same-tick position burst handling |
 | Strafe | Covered | Horizontal air candidate prediction |
 | TargetStrafe | Not a violation by itself | Legal steering can be automated; resulting excess speed is still checked |
-| TerrainSpeed | Partial | Ice friction, water and FastClimb are covered; special block speed-factor variants need dedicated terrain replay |
+| TerrainSpeed | Covered | Current nextgen IceSpeed, WaterSpeed and FastClimb paths are covered by friction/water prediction and climb-state enforcement |
 | TridentBoost | Covered | Paper Riptide event provides the authoritative vanilla impulse |
-| VehicleBoost | Partial | Large post-dismount motion can hit normal prediction, but no dedicated dismount-impulse model yet |
-| VehicleControl | Partial | BoatFlight is modeled; horses/other client-steered rideables need vehicle-specific prediction |
+| VehicleBoost | Covered | A dedicated post-dismount window rejects the current 2.0 horizontal / 1.0 vertical self-boost while preserving vehicle momentum and invalidating on external server motion |
+| VehicleControl | Partial | BoatFlight is modeled. Non-boat controlled vehicles now get repeated extreme-motion telemetry, but remain alert-only because custom server vehicles can legitimately exceed vanilla transport envelopes |
 
 ## Concrete hardening added in PR #6
 
@@ -62,12 +62,17 @@ Status meanings:
 - FastClimb and climbable multi-block clip detection
 - noclip prevention enabled by default while keeping noclip automatic bans disabled
 - regressions for HighJump, AirJump, ReverseStep and AntiLevitation
+- server-authoritative block speed-factor replay for Soul Sand/Honey and slime slipperiness enforcement
+- special bounce surfaces excluded from the ordinary jump envelope to avoid Slime/Honey false positives
+- bounded target hitbox history for reach; reported ping no longer grants raw geometric reach
+- post-dismount VehicleBoost rejection plus conservative non-boat VehicleControl telemetry
+- vehicle heuristics are explicitly ineligible for automatic BAN/KICK
 
 ## Remaining high-value work
 
-1. **Special terrain response** — model Soul Sand / Honey / Slime speed, jump and bounce factors without weakening vanilla Soul Speed, bouncing, or plugin-modified attributes.
-2. **Vehicle transitions** — model dismount velocity and non-boat controlled vehicles before adding punitive evidence.
-3. **Latency manipulation outside movement physics** — review PingSpoof interaction with combat rewind/reach separately; do not solve spoofing by simply reducing legitimate high-ping tolerance.
-4. **Live calibration** — replay real vanilla traces for the newly covered transitions before making any currently conservative signal more punitive.
+1. **Bounce restitution** — AntiBounce / BlockBounce still need a dedicated Slime/Bed/Honey vertical restitution replay. PAC currently keeps these special vertical surfaces out of the ordinary takeoff check rather than guessing.
+2. **Full non-boat vehicle physics** — the current generic VehicleControl signal is intentionally alert-only. A punitive horse/rideable model should be added only after reproducing each vanilla vehicle's steering, saddle and jump rules.
+3. **Latency confidence** — PingSpoof can be made harmless to reach compensation, but a keepalive delay is not distinguishable from real network latency by itself. PAC therefore caps rewind and rewinds actual target history instead of treating high ping as cheating.
+4. **Live calibration** — replay real vanilla traces for terrain, dismount and high-latency combat transitions before promoting any conservative signal to automatic punishment.
 
 A module listed as “Not a violation by itself” is intentionally not fingerprinted. PAC should detect impossible outcomes, not the presence of a specific client.
