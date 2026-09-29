@@ -153,9 +153,13 @@ public final class SustainedSpeedEnvelope {
             dx -= collisions.entityPushX();
             dz -= collisions.entityPushZ();
         }
+        // External/plugin momentum gets the historically conservative drag-only
+        // allowance, but slow terrain still reduces it through the client-side
+        // block velocity multiplier. Do not add ground friction here: doing so
+        // would make ordinary knockback stricter than the pre-existing policy.
         double drag = environment.ordinaryGround()
-                ? Math.max(0, Math.min(0.995, environment.horizontalDrag()
-                        * environment.groundFriction() * environment.velocityMultiplier()))
+                ? Math.max(0, Math.min(0.995,
+                        environment.horizontalDrag() * environment.velocityMultiplier()))
                 : Math.max(0, Math.min(0.995, environment.horizontalDrag()));
         double speedCap = maximumSustainableSpeed(environment);
         externalMomentumBound = speedCap + Math.max(0, externalMomentumBound - speedCap)
