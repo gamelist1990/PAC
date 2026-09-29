@@ -295,7 +295,10 @@ public final class MotionEnvironment implements Listener {
     private final ServerTickTiming serverTiming = new ServerTickTiming();
     public ServerTickTiming serverTiming() { return serverTiming; }
     private final Map<UUID, Integer> pingMillis = new ConcurrentHashMap<>();
+    private final Map<UUID, Double> maxStepHeights = new ConcurrentHashMap<>();
     public int pingMillis(UUID uuid) { return pingMillis.getOrDefault(uuid, 0); }
+    public double maxStepHeight(UUID uuid) { return maxStepHeights.getOrDefault(uuid, 0.6); }
+    public GroundStateService.GroundState groundState(UUID uuid) { return ground.state(uuid); }
     private final Map<UUID, ElytraSnapshot> elytraSnapshots = new ConcurrentHashMap<>();
     private final Map<UUID, PowderSnowSnapshot> powderSnowSnapshots = new ConcurrentHashMap<>();
     private final Map<UUID, Long> elytraBoostUntil = new ConcurrentHashMap<>();
@@ -349,6 +352,7 @@ public final class MotionEnvironment implements Listener {
     public void discardFailedSample(UUID uuid) {
         snapshots.remove(uuid);
         collisionSnapshots.remove(uuid);
+        maxStepHeights.remove(uuid);
         elytraSnapshots.remove(uuid);
         powderSnowSnapshots.remove(uuid);
         collisionSampleContinuity.remove(uuid);
@@ -418,6 +422,10 @@ public final class MotionEnvironment implements Listener {
                     System.currentTimeMillis(), player.getPing());
         }
         pingMillis.put(player.getUniqueId(), Math.max(0, player.getPing()));
+        double maxStep = ((CraftPlayer) player).getHandle().maxUpStep();
+        if (Double.isFinite(maxStep) && maxStep >= 0 && maxStep <= 16)
+            maxStepHeights.put(player.getUniqueId(), maxStep);
+        else maxStepHeights.remove(player.getUniqueId());
         var flyingSpeed = player.getAttribute(Attribute.FLYING_SPEED);
         flightPermissions.update(player.getUniqueId(), player.getAllowFlight(), player.isFlying(),
                 player.getFlySpeed(), flyingSpeed == null ? 0.05 : flyingSpeed.getValue(),
