@@ -58,7 +58,7 @@ class DefaultDetectorPolicyTest {
         CheckRegistry registry = new CheckRegistry((uuid, module) -> true);
         for (String key : new String[]{"critical-packet", "inventory-move", "invalid-movement", "invalid-pitch", "packet-flood", "nuker", "anti-hunger",
                 "motion-prediction", "air-prediction", "timer-prediction", "surface-prediction",
-                "water-flow-prediction", "water-motion-prediction", "noclip"}) {
+                "water-flow-prediction", "water-motion-prediction", "noclip", "vehicle-movement"}) {
             registry.register(new StubPacketCheck(key));
         }
 
