@@ -164,6 +164,7 @@ public final class MotionPredictionCheck extends AbstractCheck implements Packet
             }
             if (state.serverMotionActive) {
                 state.serverMotionActive = false;
+                state.speedEnvelope.endServerVelocity();
                 state.sequence = new GroundMotionSequence();
                 state.verified = null;
             }
