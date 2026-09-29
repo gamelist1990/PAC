@@ -45,6 +45,11 @@ public final class InventoryMoveCheck extends AbstractCheck implements EventChec
       }
    }
 
+   /** Server-owned view of whether the vanilla client should still be inside an inventory UI. */
+   public boolean inventoryOpen(UUID uuid) {
+      return uuid != null && this.tracker.inventoryOpen(uuid);
+   }
+
    public InventoryMoveTracker.Input onInput(UUID uuid, PacketReceiveEvent event, WrapperPlayClientPlayerInput packet, long now) {
       InventoryMoveTracker.Input raw = new InventoryMoveTracker.Input(
          packet.isForward(), packet.isBackward(), packet.isLeft(), packet.isRight(), packet.isJump(), packet.isShift(), packet.isSprint()
