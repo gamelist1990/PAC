@@ -385,7 +385,9 @@ public final class MotionEnvironment implements Listener {
     private final ServerTickTiming serverTiming = new ServerTickTiming();
     public ServerTickTiming serverTiming() { return serverTiming; }
     private final Map<UUID, Integer> pingMillis = new ConcurrentHashMap<>();
+    private final Map<UUID, Boolean> sprintEligibility = new ConcurrentHashMap<>();
     public int pingMillis(UUID uuid) { return pingMillis.getOrDefault(uuid, 0); }
+    public boolean sprintEligible(UUID uuid) { return sprintEligibility.getOrDefault(uuid, true); }
     private final Map<UUID, ElytraSnapshot> elytraSnapshots = new ConcurrentHashMap<>();
     private final Map<UUID, PowderSnowSnapshot> powderSnowSnapshots = new ConcurrentHashMap<>();
     private final Map<UUID, ClimbSnapshot> climbSnapshots = new ConcurrentHashMap<>();
@@ -443,6 +445,7 @@ public final class MotionEnvironment implements Listener {
     /** Drop a partially written tick without losing teleport synchronization or the last safe ground. */
     public void discardFailedSample(UUID uuid) {
         snapshots.remove(uuid);
+        sprintEligibility.remove(uuid);
         collisionSnapshots.remove(uuid);
         elytraSnapshots.remove(uuid);
         powderSnowSnapshots.remove(uuid);
@@ -555,8 +558,9 @@ public final class MotionEnvironment implements Listener {
         flightPermissions.update(player.getUniqueId(), player.getAllowFlight(), player.isFlying(),
                 player.getFlySpeed(), flyingSpeed == null ? 0.05 : flyingSpeed.getValue(),
                 System.currentTimeMillis());
-        Snapshot snapshot = sample(player);
         UUID uuid = player.getUniqueId();
+        sprintEligibility.put(uuid, player.getFoodLevel() > 6 || player.getAllowFlight());
+        Snapshot snapshot = sample(player);
         Snapshot previous = snapshots.put(uuid, snapshot);
         UUID worldId = player.getWorld().getUID();
         long generation = teleportGeneration.getOrDefault(uuid, 0L);
@@ -1282,19 +1286,13 @@ public final class MotionEnvironment implements Listener {
                 || !Float.isFinite(friction))
             return Float.NaN;
 
-        BoundingBox body = player.getBoundingBox();
-        BoundingBox feet = new BoundingBox(body.getMinX() + 0.01, supportY - 0.006,
-                body.getMinZ() + 0.01, body.getMaxX() - 0.01, supportY + 0.002,
-                body.getMaxZ() - 0.01);
-        boolean hasSupport = false;
-        for (BoundingBox shape : floor.getBlockData().getCollisionShape(floor.getLocation()).getBoundingBoxes()) {
-            if (GroundStateService.supportsTranslated(feet, shape,
-                    support.getX(), support.getY(), support.getZ(), supportY)) {
-                hasSupport = true;
-                break;
-            }
-        }
-        return hasSupport ? friction : Float.NaN;
+        // GroundStateService already proved the exact collision surface supporting
+        // the feet and supplied supportY. Vanilla's getBlockPosBelowThatAffectsMyMovement()
+        // deliberately samples 0.5000001 below the feet for friction; on a lower
+        // half-slab that can be the block *under* the slab. Requiring that friction
+        // block to also own the supporting collision shape incorrectly disables the
+        // ordinary-ground predictor only on lower slabs.
+        return friction;
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)

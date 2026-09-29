@@ -195,7 +195,8 @@ public final class MotionPredictionCheck extends AbstractCheck implements Packet
             // the environment stale (permanently so above 400 ms RTT) and
             // compares movement with an older collision volume.
             var rawEnvironment = context.plugin().environment().get(context.uuid());
-            var environment = clientSprintEnvironment(rawEnvironment, context.inputs());
+            var environment = clientSprintEnvironment(rawEnvironment, context.inputs(),
+                    context.plugin().environment().sprintEligible(context.uuid()));
             var previous = state.sequence.lastPosition();
             var previousMotion = state.sequence.motion();
             var collisions = context.plugin().environment().collisions(context.uuid());
@@ -400,10 +401,11 @@ public final class MotionPredictionCheck extends AbstractCheck implements Packet
         context.plugin().correctJavaMovement(context.uuid(), target.x(), target.y(), target.z());
     }
 
-    private static org.pexserver.pac.movement.MotionEnvironment.Snapshot clientSprintEnvironment(
+    static org.pexserver.pac.movement.MotionEnvironment.Snapshot clientSprintEnvironment(
             org.pexserver.pac.movement.MotionEnvironment.Snapshot environment,
-            org.pexserver.pac.packet.JavaInputCapture.Window inputs) {
-        if (environment == null || environment.sprinting() || inputs == null
+            org.pexserver.pac.packet.JavaInputCapture.Window inputs,
+            boolean sprintEligible) {
+        if (environment == null || environment.sprinting() || !sprintEligible || inputs == null
                 || inputs.current() == null || !inputs.current().forward()
                 || !inputs.current().sprint()) return environment;
         return environment.withSprinting(true, environment.movementSpeed() * 1.3);
