@@ -9,11 +9,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 class CombatTargetHistoryTest {
-    @Test void reportedPingCannotRewindBeyondBoundedWindow() {
+    @Test void reportedPingNeverGrantsReachRewind() {
         assertEquals(0, CombatTargetHistory.trustedRewindMillis(0));
-        assertEquals(50, CombatTargetHistory.trustedRewindMillis(100));
-        assertEquals(250, CombatTargetHistory.trustedRewindMillis(500));
-        assertEquals(250, CombatTargetHistory.trustedRewindMillis(25_000));
+        assertEquals(0, CombatTargetHistory.trustedRewindMillis(100));
+        assertEquals(0, CombatTargetHistory.trustedRewindMillis(500));
+        assertEquals(0, CombatTargetHistory.trustedRewindMillis(25_000));
     }
 
     @Test void selectsHistoricalBoxAtOrBeforeAttackViewTime() {
@@ -29,7 +29,7 @@ class CombatTargetHistoryTest {
         assertEquals(1.0, frame.box().getMinX(), 1.0e-12);
     }
 
-    @Test void spoofedHugePingStillOnlySelectsBoundedHistory() {
+    @Test void spoofedHugePingStillUsesAttackReceiveTime() {
         var history = new CombatTargetHistory();
         UUID player = UUID.randomUUID();
         UUID world = UUID.randomUUID();
@@ -44,7 +44,7 @@ class CombatTargetHistoryTest {
         var frame = history.atOrBefore(player, world, attackAt - rewind);
 
         assertNotNull(frame);
-        assertEquals(5.0, frame.box().getMinX(), 1.0e-12,
-                "25 second fake ping must not rewind farther than five ticks");
+        assertEquals(10.0, frame.box().getMinX(), 1.0e-12,
+                "25 second fake ping must not move the reach geometry into older history");
     }
 }
