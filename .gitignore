@@ -5,4 +5,4 @@ run/
 *.iml
 __pycache__/
 *.pyc
-bin
+bin/*
