@@ -51,8 +51,9 @@ public final class AirPredictionCheck extends AbstractCheck implements PacketChe
             states.remove(context.uuid());
             return;
         }
-        if (context.plugin().environment().authorizedFlightMovement(context.uuid())
-                && context.externalImpulse() == null && serverMotion == null) {
+        if (PredictionTransitionPolicy.suspendForAuthorizedFlight(
+                context.plugin().environment().authorizedFlightMovement(context.uuid()),
+                context.externalImpulse() != null, serverMotion != null)) {
             states.remove(context.uuid());
             return;
         }
