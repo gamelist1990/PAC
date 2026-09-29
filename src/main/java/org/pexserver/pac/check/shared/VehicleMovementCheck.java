@@ -194,6 +194,7 @@ public final class VehicleMovementCheck extends AbstractCheck implements EventCh
                 lastAt = now;
                 haveDy = false;
                 residuals = 0;
+                residualBudget = 0;
                 return AirFinding.valid();
             }
 
