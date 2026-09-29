@@ -20,7 +20,7 @@ class DefaultDetectorPolicyTest {
         @Override public void inspect(PacketContext context) { }
     }
 
-    @Test void experimentalXrayAndNoClipAreDisabledByDefault() {
+    @Test void experimentalXrayStaysDisabledWhileNoClipPreventionDefaultsOn() {
         var stream = getClass().getClassLoader().getResourceAsStream("config.yml");
         assertNotNull(stream);
         var config = YamlConfiguration.loadConfiguration(new InputStreamReader(stream, StandardCharsets.UTF_8));
@@ -29,7 +29,7 @@ class DefaultDetectorPolicyTest {
         assertEquals(24, detectors.getKeys(false).size());
         assertTrue(detectors.contains("inventory-move"));
         for (String key : detectors.getKeys(false)) {
-            assertEquals(!key.equals("xray") && !key.equals("noclip"),
+            assertEquals(!key.equals("xray"),
                     config.getBoolean("detectors." + key + ".enabled"),
                     key + " has an unexpected default state");
                 assertEquals(true,
