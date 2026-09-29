@@ -178,6 +178,11 @@ public final class PacketChecks implements PacketListener, Listener {
 
     @Override public void onPacketReceive(PacketReceiveEvent event) {
         UUID eventUuid = event.getUser().getUUID();
+        if (eventUuid != null && !plugin.isBedrockPlayer(eventUuid)
+                && plugin.checks().get("packet-flood") instanceof PacketFloodCheck flood
+                && flood.inspectDecodedPacket(plugin, eventUuid, event, System.nanoTime())) {
+            return;
+        }
         if (eventUuid != null && !plugin.isBedrockPlayer(eventUuid) && plugin.environment() != null) {
             ClientVersion version = event.getUser().getClientVersion();
             if (version != null && version != ClientVersion.UNKNOWN) {
