@@ -14,6 +14,7 @@ public final class AirHoverWindow {
     private static final long MIN_SAMPLE_INTERVAL_MILLIS = 40;
     private static final double MAX_VERTICAL_RANGE = 0.35;
     private static final double MINIMUM_NEAR_STATIONARY_RATIO = 0.45;
+    private static final double MINIMUM_AIRBORNE_RATIO_FOR_SMALL_RANGE = 0.80;
     private static final double NEAR_STATIONARY_PER_TICK = 0.015;
     private static final int MINIMUM_SAMPLES = 4;
     private static final long INELIGIBLE_GRACE_MILLIS = 750;
@@ -71,9 +72,8 @@ public final class AirHoverWindow {
             minimum = Math.min(minimum, sample.y());
             maximum = Math.max(maximum, sample.y());
         }
-        if (maximum - minimum <= MAX_VERTICAL_RANGE) return true;
-
         long observedTicks = 0;
+        long airborneTicks = 0;
         long nearStationaryTicks = 0;
         previous = null;
         for (Sample sample : samples) {
@@ -81,13 +81,18 @@ public final class AirHoverWindow {
                 long ticks = Math.max(1, Math.min(20,
                         Math.round((sample.at() - previous.at()) / 50.0)));
                 observedTicks += ticks;
-                if (sample.eligible() && previous.eligible()
-                        && Math.abs(sample.y() - previous.y()) <= NEAR_STATIONARY_PER_TICK * ticks)
-                    nearStationaryTicks += ticks;
+                if (sample.eligible() && previous.eligible()) {
+                    airborneTicks += ticks;
+                    if (Math.abs(sample.y() - previous.y()) <= NEAR_STATIONARY_PER_TICK * ticks)
+                        nearStationaryTicks += ticks;
+                }
             }
             previous = sample;
         }
-        return observedTicks > 0
-                && (double) nearStationaryTicks / observedTicks >= MINIMUM_NEAR_STATIONARY_RATIO;
+        if (observedTicks == 0) return false;
+        double airborneRatio = (double) airborneTicks / observedTicks;
+        if (maximum - minimum <= MAX_VERTICAL_RANGE
+                && airborneRatio >= MINIMUM_AIRBORNE_RATIO_FOR_SMALL_RANGE) return true;
+        return (double) nearStationaryTicks / observedTicks >= MINIMUM_NEAR_STATIONARY_RATIO;
     }
 }
