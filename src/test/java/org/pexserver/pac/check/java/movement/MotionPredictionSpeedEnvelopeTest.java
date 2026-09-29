@@ -53,4 +53,34 @@ class MotionPredictionSpeedEnvelopeTest {
                 false, false, 0, 0);
         assertTrue(MotionPredictionCheck.explainsSpeedEnvelope(sample, 0.04));
     }
+
+    @Test void shortTrackedTransitionsCannotEraseIntermittentFlightOffsetEvidence() {
+        var transition = new GroundMotionSequence.Sample(false, 0, false, 0.1, 0,
+                false, false, 0, 0);
+        var tracked = new SustainedSpeedEnvelope.Sample(true, false, 0.1, 0.3, null);
+        double buffer = 0;
+        for (int burst = 0; burst < 5; burst++) {
+            buffer += 2;
+            buffer = MotionPredictionCheck.decayUnevaluatedOffsetEvidence(
+                    buffer, transition, tracked, false, false);
+        }
+        assertTrue(buffer >= 8,
+                "brief ground/air transition frames must not reset repeated Flight bursts");
+    }
+
+    @Test void unsafeTransitionsStillDrainOrResetOffsetEvidence() {
+        var transition = new GroundMotionSequence.Sample(false, 0, false, 0.1, 0,
+                false, false, 0, 0);
+        var tracked = new SustainedSpeedEnvelope.Sample(true, false, 0.1, 0.3, null);
+
+        assertEquals(3.0, MotionPredictionCheck.decayUnevaluatedOffsetEvidence(
+                4.0, transition, tracked, false, true), 1.0e-9);
+        assertEquals(0.0, MotionPredictionCheck.decayUnevaluatedOffsetEvidence(
+                4.0, transition, tracked, true, false), 1.0e-9);
+    }
+
+    @Test void reportedPingAloneDoesNotDisableOrderedLocalPrediction() {
+        assertFalse(MotionPredictionCheck.suspendForTransportUncertainty(false, 180));
+        assertTrue(MotionPredictionCheck.suspendForTransportUncertainty(true, 20));
+    }
 }

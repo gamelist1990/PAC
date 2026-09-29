@@ -120,8 +120,12 @@ public final class MotionPredictionCheck extends AbstractCheck implements Packet
             if (!glideSettling) {
                 state.glideHorizontalSpeed = 0;
             }
-            if (context.timingUncertain()
-                    || context.plugin().environment().pingMillis(context.uuid()) >= 100) {
+            // Local movement packets are ordered by the client connection. Reported RTT
+            // alone does not make their physics ambiguous; real arrival gaps, server recovery,
+            // moving supports, and pose transitions are already folded into timingUncertain().
+            // Disabling prediction for every player above 100 ms creates a permanent blind spot.
+            if (suspendForTransportUncertainty(context.timingUncertain(),
+                    context.plugin().environment().pingMillis(context.uuid()))) {
                 var impulse = context.externalImpulse();
                 if (impulse != null && impulse.sequence() != state.pendingImpulseSequence) {
                     state.pendingImpulseSequence = impulse.sequence();
@@ -322,8 +326,8 @@ public final class MotionPredictionCheck extends AbstractCheck implements Packet
             }
             if (!sample.evaluated()) {
                 state.speedEvidence.reset();
-                state.buffer = context.externalImpulse() != null
-                        ? 0 : Math.max(0, state.buffer - 1);
+                state.buffer = decayUnevaluatedOffsetEvidence(state.buffer, sample, envelopeSample,
+                        context.externalImpulse() != null, collisionGeometryUncertain);
                 state.verified = null;
                 return;
             }
@@ -357,6 +361,32 @@ public final class MotionPredictionCheck extends AbstractCheck implements Packet
                 correct(context, state, previous, previousMotion, true);
             }
         }
+    }
+
+    static boolean suspendForTransportUncertainty(boolean timingUncertain,
+                                                    int ignoredReportedPingMillis) {
+        // RTT affects when packets arrive, not their client-side physics order.
+        // MovementLatencyWindow and ServerTickTiming already convert actual gaps
+        // and recovery periods into timingUncertain.
+        return timingUncertain;
+    }
+
+    static double decayUnevaluatedOffsetEvidence(double buffer,
+                                                   GroundMotionSequence.Sample sample,
+                                                   SustainedSpeedEnvelope.Sample envelopeSample,
+                                                   boolean externalMotion,
+                                                   boolean collisionGeometryUncertain) {
+        if (externalMotion) return 0;
+        // Ground/air mode switches can make the detailed replay skip one packet even
+        // though the independent cross-mode speed envelope still has a fresh,
+        // trusted trajectory. Flight clients can intentionally toggle around these
+        // boundaries; treating every skipped replay as a full evidence reset makes
+        // that transition an evasion primitive. Preserve most offset evidence only
+        // while the independent envelope proves that tracking continuity survived.
+        boolean trackedTransition = !collisionGeometryUncertain
+                && sample != null && sample.skippedFrames() <= 1
+                && envelopeSample != null && envelopeSample.evaluated();
+        return Math.max(0, buffer - (trackedTransition ? 0.1 : 1.0));
     }
 
     static boolean explainsSpeedEnvelope(GroundMotionSequence.Sample sample, double threshold) {
