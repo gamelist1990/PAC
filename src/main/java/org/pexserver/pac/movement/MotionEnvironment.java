@@ -67,7 +67,29 @@ public final class MotionEnvironment implements Listener {
                            int levitationAmplifier, boolean verticalAir,
                            float sneakingSpeed, float itemUseMultiplier,
                            float stuckHorizontalMultiplier, float stuckVerticalMultiplier,
-                           boolean gravityAirborne) {
+                           boolean gravityAirborne, float velocityMultiplier) {
+        public Snapshot(boolean ordinaryGround, boolean ordinaryAir,
+                        boolean sprinting, boolean sneaking, boolean usingItem,
+                        float yaw, double movementSpeed,
+                        double x, double y, double z,
+                        int tick, long capturedAt,
+                        boolean wallAdjacent, boolean waterSurface,
+                        float groundFriction,
+                        double gravity, float horizontalDrag, float verticalDrag,
+                        float jumpStrength, boolean slowFalling,
+                        int levitationAmplifier, boolean verticalAir,
+                        float sneakingSpeed, float itemUseMultiplier,
+                        float stuckHorizontalMultiplier, float stuckVerticalMultiplier,
+                        boolean gravityAirborne) {
+            this(ordinaryGround, ordinaryAir, sprinting, sneaking, usingItem,
+                    yaw, movementSpeed, x, y, z, tick, capturedAt,
+                    wallAdjacent, waterSurface, groundFriction,
+                    gravity, horizontalDrag, verticalDrag, jumpStrength,
+                    slowFalling, levitationAmplifier, verticalAir,
+                    sneakingSpeed, itemUseMultiplier,
+                    stuckHorizontalMultiplier, stuckVerticalMultiplier,
+                    gravityAirborne, 1.0f);
+        }
         public Snapshot(boolean ordinaryGround, boolean ordinaryAir,
                         boolean sprinting, boolean sneaking, boolean usingItem,
                         float yaw, double movementSpeed,
@@ -86,21 +108,21 @@ public final class MotionEnvironment implements Listener {
                     gravity, horizontalDrag, verticalDrag, jumpStrength,
                     slowFalling, levitationAmplifier, verticalAir,
                     sneakingSpeed, itemUseMultiplier,
-                    stuckHorizontalMultiplier, stuckVerticalMultiplier, verticalAir);
+                    stuckHorizontalMultiplier, stuckVerticalMultiplier, verticalAir, 1.0f);
         }
         public Snapshot withMovementSpeed(double speed) {
             return new Snapshot(ordinaryGround, ordinaryAir, sprinting, sneaking, usingItem,
                     yaw, speed, x, y, z, tick, capturedAt, wallAdjacent, waterSurface, groundFriction,
                     gravity, horizontalDrag, verticalDrag, jumpStrength, slowFalling,
                     levitationAmplifier, verticalAir, sneakingSpeed, itemUseMultiplier,
-                    stuckHorizontalMultiplier, stuckVerticalMultiplier, gravityAirborne);
+                    stuckHorizontalMultiplier, stuckVerticalMultiplier, gravityAirborne, velocityMultiplier);
         }
                 public Snapshot withSprinting(boolean sprinting, double speed) {
                     return new Snapshot(ordinaryGround, ordinaryAir, sprinting, sneaking, usingItem,
                         yaw, speed, x, y, z, tick, capturedAt, wallAdjacent, waterSurface, groundFriction,
                         gravity, horizontalDrag, verticalDrag, jumpStrength, slowFalling,
                         levitationAmplifier, verticalAir, sneakingSpeed, itemUseMultiplier,
-                        stuckHorizontalMultiplier, stuckVerticalMultiplier, gravityAirborne);
+                        stuckHorizontalMultiplier, stuckVerticalMultiplier, gravityAirborne, velocityMultiplier);
                 }
         public Snapshot(boolean ordinaryGround, boolean ordinaryAir,
                         boolean sprinting, boolean sneaking, boolean usingItem,
