@@ -540,6 +540,18 @@ public final class KillAuraCheck extends AbstractCheck implements PacketCheck, E
         return player.getGameMode() == GameMode.SURVIVAL || player.getGameMode() == GameMode.ADVENTURE;
     }
 
+    static boolean supportsBedrockInputMode(String inputMode) {
+        String mode = normalizeBedrockInputMode(inputMode);
+        return mode.equals("MOUSE") || mode.equals("KEYBOARD_MOUSE")
+                || mode.equals("GAMEPAD") || mode.equals("GAME_PAD")
+                || mode.equals("CONTROLLER");
+    }
+
+    private static String normalizeBedrockInputMode(String inputMode) {
+        if (inputMode == null || inputMode.isBlank()) return "UNKNOWN";
+        return inputMode.trim().toUpperCase(Locale.ROOT).replace('-', '_').replace(' ', '_');
+    }
+
     @Override public void forget(UUID uuid) {
         super.forget(uuid);
         bursts.remove(uuid);
