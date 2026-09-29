@@ -7,7 +7,6 @@ import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
-import org.bukkit.event.vehicle.VehicleExitEvent;
 import org.bukkit.event.vehicle.VehicleMoveEvent;
 import org.bukkit.util.Vector;
 import org.pexserver.pac.PacPlugin;
@@ -22,6 +21,9 @@ import java.util.UUID;
 /** Shared Java/Bedrock boat-flight check. Samples ridden boats even when they stop moving. */
 public final class BoatFlightCheck extends AbstractCheck implements EventCheck, Listener {
     private static final int ROLLBACK_TICKS = 80;
+    // Keep evidence across the short dismount/remount sequence used by
+    // vehicle "rehook" bypasses. Longer gaps are treated as a new ride.
+    private static final int REHOOK_PRESERVE_TICKS = 4;
     private static final double HOVER_FALL_LIMIT = -0.025;
     private static final double FAST_BOAT_SPEED_SQUARED = 0.49;
     // AbstractBoat.floatBoat() applies 0.9 air friction, then controlBoat()
@@ -186,7 +188,7 @@ public final class BoatFlightCheck extends AbstractCheck implements EventCheck, 
         Iterator<Map.Entry<UUID, State>> iterator = samples.entrySet().iterator();
         while (iterator.hasNext()) {
             State state = iterator.next().getValue();
-            if (tick - state.lastTick > 2) iterator.remove();
+            if (tick - state.lastTick > REHOOK_PRESERVE_TICKS) iterator.remove();
         }
     }
 
@@ -214,7 +216,8 @@ public final class BoatFlightCheck extends AbstractCheck implements EventCheck, 
 
         Location current = boat.getLocation();
         boolean airborne = boat.getStatus() == Boat.Status.IN_AIR && boat.hasGravity();
-        if (state.driver != null && !state.driver.equals(uuid)) reset(state);
+        boolean sameDriver = state.driver == null || state.driver.equals(uuid);
+        if (!sameDriver) reset(state);
         state.driver = uuid;
 
         // While a confirmed boat is being corrected, keep enforcing the first
@@ -229,16 +232,24 @@ public final class BoatFlightCheck extends AbstractCheck implements EventCheck, 
             return;
         }
 
+        int tickGap = state.lastTick == Integer.MIN_VALUE
+                ? Integer.MAX_VALUE : tick - state.lastTick;
+        boolean sameWorld = state.lastLocation != null
+                && state.lastLocation.getWorld().equals(current.getWorld());
+        boolean preserveRehook = preserveShortRehookGap(
+                tickGap, sameDriver, sameWorld);
         if (state.lastLocation == null || state.lastTick == Integer.MIN_VALUE
-                || tick != state.lastTick + 1 || !state.lastLocation.getWorld().equals(current.getWorld())) {
+                || tickGap != 1 || !sameWorld) {
             state.lastLocation = current.clone();
             if (!airborne) state.lastSafeLocation = current.clone();
             state.lastTick = tick;
-            state.hoverTicks = 0;
-            state.airSpeed.reset();
-            state.airVertical.reset();
-            state.airVector.reset();
-            state.fastAnchor = null;
+            if (!preserveRehook) {
+                state.hoverTicks = 0;
+                state.airSpeed.reset();
+                state.airVertical.reset();
+                state.airVector.reset();
+                state.fastAnchor = null;
+            }
             return;
         }
 
@@ -302,7 +313,8 @@ public final class BoatFlightCheck extends AbstractCheck implements EventCheck, 
         state.correctionUntilTick = 0;
     }
 
-    @EventHandler public void onExit(VehicleExitEvent event) {
-        if (event.getVehicle() instanceof Boat) samples.remove(event.getVehicle().getUniqueId());
+    static boolean preserveShortRehookGap(int tickGap, boolean sameDriver, boolean sameWorld) {
+        return tickGap > 1 && tickGap <= REHOOK_PRESERVE_TICKS
+                && sameDriver && sameWorld;
     }
 }
