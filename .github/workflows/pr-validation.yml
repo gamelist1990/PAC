@@ -35,6 +35,7 @@ jobs:
             --tests 'org.pexserver.pac.*Surface*' \
             --tests 'org.pexserver.pac.*Riptide*' \
             --tests 'org.pexserver.pac.*RapidPositionJump*' \
+            --tests 'org.pexserver.pac.movement.EntityPushSuppressionWindowTest' \
             --tests 'org.pexserver.pac.check.shared.*'
 
       - name: Build full PAC distribution
