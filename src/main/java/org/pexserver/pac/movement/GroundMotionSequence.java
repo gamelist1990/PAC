@@ -258,6 +258,10 @@ public final class GroundMotionSequence {
         // already changed to air. Disarm after the first upward physics frame.
         boolean combatImpulseSettling = lastCombatImpulseAt > 0 && now >= lastCombatImpulseAt
                 && now - lastCombatImpulseAt < 500;
+        boolean verticalSurfaceModeled = environment != null
+                && (!environment.specialVerticalSurface()
+                    || environment.bounceRestitution() > 0.0f
+                    || Math.abs(environment.surfaceJumpStrength() - environment.jumpStrength()) > 1.0e-6f);
         boolean bounceArmedThisFrame = false;
         if (!externalTransition && !combatImpulseSettling && skippedFrames == 0
                 && physicsFrames == 1 && environment != null && environment.ordinaryGround()
@@ -283,7 +287,8 @@ public final class GroundMotionSequence {
                 && now - collisions.capturedAt() <= 200;
         boolean takeoffFrame = !externalTransition && !combatImpulseSettling
                 && !bounceArmedThisFrame
-                && environment != null && Float.isFinite(environment.surfaceJumpStrength())
+                && environment != null && verticalSurfaceModeled
+                && Float.isFinite(environment.surfaceJumpStrength())
                 && verifiedCollisionGeometry
                 && (collisions == null || !collisions.hardEntityCollisionPossible())
                 && skippedFrames == 0 && takeoffArmed
@@ -377,6 +382,7 @@ public final class GroundMotionSequence {
         // grounded takeoff baseline. Arming here makes the next small Y delta
         // look like an impossible jump (especially beside a wall).
         if (ordinary && !bounceArmedThisFrame && !combatImpulseSettling
+                && verticalSurfaceModeled
                 && Float.isFinite(environment.surfaceJumpStrength())
                 && (firstPosition || dy <= 0.03)
                 && environment.near(nextX, nextY, nextZ)
