@@ -1,0 +1,44 @@
+name: PR validation
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  combat-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out pull request
+        uses: actions/checkout@v4
+
+      - name: Set up Java 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Run combat regression tests
+        shell: bash
+        run: |
+          chmod +x gradlew
+          ./gradlew test --tests 'org.pexserver.pac.check.shared.*'
+
+      - name: Build full PAC distribution
+        shell: bash
+        run: ./gradlew build
+
+      - name: Upload PR build
+        uses: actions/upload-artifact@v4
+        with:
+          name: PAC-pr-${{ github.event.pull_request.number || github.run_number }}
+          path: build/libs/PAC-*.jar
+          if-no-files-found: error
