@@ -180,7 +180,7 @@ detectors:
     kick-enabled: false
     kick-score-threshold: 10
     phase-flags-required: 5
-    collision-tolerance: 0.10
+    collision-tolerance: 0.03
     max-distance: 10
   simulation-killaura:
     # Java-only block collision replay for attacks that cannot reach a target through vanilla geometry.
