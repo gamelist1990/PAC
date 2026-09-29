@@ -52,6 +52,24 @@ class WaterMotionPredictorTest {
         assertEquals(0.035, step.dy(), 1.0e-7);
     }
 
+    @Test void noPushSinkingZeroesVerticalMotionAndLeavesPredictionResidual() {
+        MotionPredictor.Input idle = new MotionPredictor.Input(
+                false, false, false, false, false, false, false);
+        var previous = new MotionPredictor.Motion(0, -0.10, 0);
+        var vanilla = WaterMotionPredictor.step(previous, 0, STILL_WATER, idle, false);
+
+        // LiquidBounce NoPush.SINKING writes player.deltaMovement.y = 0 while
+        // falling in liquid. The server's still-water recurrence remains
+        // negative, so the forged zero-Y step must not fit the predictor.
+        var prediction = WaterMotionPredictor.predict(previous,
+                new MotionPredictor.Motion(0, 0, 0), 0, STILL_WATER,
+                new JavaInputCapture.Window(idle, null), 0, 64, 0, CLEAR_VOLUME);
+
+        assertTrue(vanilla.dy() < -0.05);
+        assertNotNull(prediction);
+        assertTrue(prediction.offset() > 0.05);
+    }
+
     @Test void waterCurrentIsAddedToTheNextMovementAndKeepsMojangMinimumPush() {
         var current = new WaterMotionEnvironment.Snapshot(0, 64, 0, 0,
                 0.1, 0, 0.08, false, false,
