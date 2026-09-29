@@ -103,7 +103,7 @@ public final class PacPlugin extends JavaPlugin implements Listener {
     private final java.util.Map<UUID, java.util.Map<String, Boolean>> worldDetectorEnabled = new ConcurrentHashMap<>();
     private final java.util.Map<UUID, java.util.Map<String, Boolean>> worldDetectorCancel = new ConcurrentHashMap<>();
     private final java.util.Map<UUID, Long> lastJavaCorrection = new ConcurrentHashMap<>();
-    private final long[] lastSampleFailureLog = new long[4];
+    private final long[] lastSampleFailureLog = new long[5];
     private volatile String banMessageSuffix = DEFAULT_BAN_SUFFIX;
     private volatile String kickMessageSuffix = DEFAULT_KICK_SUFFIX;
     private volatile boolean apiControlAuthority;
@@ -236,7 +236,7 @@ public final class PacPlugin extends JavaPlugin implements Listener {
                     }
                     try { if (reach != null) reach.samplePlayer(player); }
                     catch (RuntimeException e) {
-                        reportSampleFailure(3, "combat target history", e);
+                        reportSampleFailure(4, "combat target history", e);
                     }
                 }
             } finally {
