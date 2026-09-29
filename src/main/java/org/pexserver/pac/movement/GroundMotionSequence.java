@@ -506,7 +506,8 @@ public final class GroundMotionSequence {
                                                     MotionCollisionSnapshot collisions) {
         double maximumStep = MotionPredictor.maximumGroundStepClient(initial,
                 environment.movementSpeed(), environment.groundFriction(), environment.horizontalDrag(),
-                sneakScale, environment.itemUseMultiplier()) * environment.stuckHorizontalMultiplier();
+                sneakScale, environment.itemUseMultiplier(), environment.velocityMultiplier())
+                * environment.stuckHorizontalMultiplier();
         double entityPushAllowance = collisions.entityPushHorizontalAllowance();
         double horizontalTolerance = COLLISION_MATCH_EPSILON + entityPushAllowance;
         if (Math.hypot(actualX, actualZ) > maximumStep
