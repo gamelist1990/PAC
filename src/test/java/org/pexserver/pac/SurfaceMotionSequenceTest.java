@@ -13,6 +13,11 @@ class SurfaceMotionSequenceTest {
                 0, 0.1, 0, y, 0, 1, at, wall, liquid);
     }
 
+    private static MotionEnvironment.Snapshot airborne(double y, long at) {
+        return new MotionEnvironment.Snapshot(false, true, false, false, false,
+                0, 0.1, 0, y, 0, 1, at, false, false);
+    }
+
     private static MotionEnvironment.Snapshot supportedWaterEdge(double y, long at) {
         return new MotionEnvironment.Snapshot(true, false, false, false, false,
                 0, 0.1, 0, y, 0, 1, at, false, true);
@@ -142,4 +147,34 @@ class SurfaceMotionSequenceTest {
                 sequence.accept(true, 0.4, 64, 0, false,
                         surface(64, 1200, false, false), true, 1200));
     }
+    @Test void repeatedAirborneGroundSpoofTriggersAfterFourClaims() {
+        var sequence = new SurfaceMotionSequence();
+        sequence.accept(true, 0, 67.0, 0, false, airborne(67.0, 1000), 1000);
+        for (int step = 1; step < 4; step++) {
+            long at = 1000 + step * 50L;
+            double y = 67.0 - step * 0.10;
+            assertEquals(SurfaceMotionSequence.Anomaly.NONE,
+                    sequence.accept(true, 0, y, 0, true, airborne(y, at), at));
+        }
+        assertEquals(SurfaceMotionSequence.Anomaly.AIR_GROUND_CLAIM,
+                sequence.accept(true, 0, 66.6, 0, true,
+                        airborne(66.6, 1200), 1200));
+    }
+
+    @Test void isolatedAirborneGroundClaimDoesNotFlag() {
+        var sequence = new SurfaceMotionSequence();
+        sequence.accept(true, 0, 67.0, 0, false, airborne(67.0, 1000), 1000);
+        assertEquals(SurfaceMotionSequence.Anomaly.NONE,
+                sequence.accept(true, 0, 66.9, 0, true, airborne(66.9, 1050), 1050));
+        assertEquals(SurfaceMotionSequence.Anomaly.NONE,
+                sequence.accept(true, 0, 66.8, 0, false, airborne(66.8, 1100), 1100));
+        for (int step = 1; step <= 3; step++) {
+            long at = 1100 + step * 50L;
+            double y = 66.8 - step * 0.1;
+            assertEquals(SurfaceMotionSequence.Anomaly.NONE,
+                    sequence.accept(true, 0, y, 0, true, airborne(y, at), at));
+        }
+    }
+
+
 }
