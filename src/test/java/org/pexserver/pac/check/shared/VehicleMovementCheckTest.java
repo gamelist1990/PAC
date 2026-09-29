@@ -164,4 +164,37 @@ class VehicleMovementCheckTest {
         assertFalse(window.sample(vehicle, true, 64.70, 0.08, 0.98f, 1_105).impossible());
     }
 
+    @Test void vanillaHorseHorizontalEnvelopeUsesRiddenSpeedAndFriction() {
+        double legal = VehicleMovementCheck.livingHorizontalLimit(
+                0.12, 0.225, 0.6f);
+
+        assertTrue(Double.isFinite(legal));
+        assertTrue(legal > 0.42 && legal < 0.45,
+                "normal horse acceleration plus current momentum should stay tightly bounded");
+    }
+
+    @Test void vehicleControlSprintSpeedFiveCannotFitVanillaHorseEnvelope() {
+        double legal = VehicleMovementCheck.livingHorizontalLimit(
+                0.25, 0.3375, 0.6f);
+
+        assertTrue(5.0 > legal * 5,
+                "LiquidBounce sprint vehicle speed must remain far outside a fast vanilla horse bound");
+    }
+
+    @Test void iceLikeFrictionStillHasFiniteConservativeVehicleEnvelope() {
+        double legal = VehicleMovementCheck.livingHorizontalLimit(
+                0.45, 0.225, 0.98f);
+
+        assertTrue(Double.isFinite(legal));
+        assertTrue(legal > 0.58,
+                "existing momentum on slippery support must remain legal");
+    }
+
+    @Test void invalidVehiclePhysicsParametersDisableStrictHorizontalModel() {
+        assertTrue(Double.isNaN(VehicleMovementCheck.livingHorizontalLimit(
+                0.2, 0.2, Float.NaN)));
+        assertTrue(Double.isNaN(VehicleMovementCheck.livingHorizontalLimit(
+                0.2, -1.0, 0.6f)));
+    }
+
 }
