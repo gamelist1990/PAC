@@ -51,4 +51,29 @@ class MovementPacketTimerTest {
             assertFalse(timer.accept(3_000_000_000L + packet * 1_000_000L));
         }
     }
+    @Test void liquidBounceDamageNcpBurstIsCutOffBeforeAllPacketsApply() {
+        var timer = new MovementPacketTimer();
+        long now = 5_000_000_000L;
+        int accepted = 0;
+        int rejected = 0;
+        int firstRejectedAt = -1;
+
+        // Damage(NCP), damage=1 emits 65 pairs of +0.049 / baseline
+        // position packets back-to-back before the final on-ground packet.
+        for (int packet = 0; packet < 130; packet++) {
+            boolean blocked = timer.accept(now);
+            if (blocked) {
+                rejected++;
+                if (firstRejectedAt < 0) firstRejectedAt = packet;
+            } else {
+                accepted++;
+            }
+        }
+
+        assertTrue(firstRejectedAt >= 0 && firstRejectedAt <= 36,
+                "the 130-packet damage burst must enter rejection near the timer confirmation boundary");
+        assertTrue(rejected > accepted,
+                "most packets in the self-damage burst must be rejected after confirmation");
+    }
+
 }
