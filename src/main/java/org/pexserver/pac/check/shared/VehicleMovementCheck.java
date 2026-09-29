@@ -19,6 +19,7 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Conservative vehicle-transition protection. The dismount branch blocks the
@@ -32,6 +33,9 @@ public final class VehicleMovementCheck extends AbstractCheck implements EventCh
     private static final double GENERIC_HORIZONTAL_LIMIT = 1.50;
     private static final double GENERIC_VERTICAL_LIMIT = 0.90;
     private static final int GENERIC_REPEAT_TICKS = 2;
+    private static final long PACKET_SNAPSHOT_MAX_AGE_MILLIS = 175;
+    private static final double PACKET_MIN_HORIZONTAL_LIMIT = 2.0;
+    private static final double PACKET_MIN_VERTICAL_LIMIT = 1.25;
 
     static final class DismountBoostWindow {
         private long expiresAt;
@@ -104,11 +108,28 @@ public final class VehicleMovementCheck extends AbstractCheck implements EventCh
         static Finding valid() { return new Finding(false, 0, 0, 0, 0); }
     }
 
+    private record PacketVehicleSnapshot(UUID vehicleId, String type,
+                                         double x, double y, double z,
+                                         double velocityX, double velocityY, double velocityZ,
+                                         boolean gravity, boolean airborne, boolean inWater,
+                                         long sampledAt) { }
+
+    record VehiclePacketFinding(boolean evaluated, boolean impossible,
+                                double horizontal, double vertical,
+                                double legalHorizontal, double legalVertical,
+                                String type) {
+        static VehiclePacketFinding skipped() {
+            return new VehiclePacketFinding(false, false, 0, 0, 0, 0, "");
+        }
+    }
+
     private record VehicleState(UUID driver, GenericVehicleWindow window) { }
 
     private final PacPlugin plugin;
     private final Map<UUID, DismountBoostWindow> dismounts = new HashMap<>();
     private final Map<UUID, VehicleState> vehicles = new HashMap<>();
+    private final ConcurrentHashMap<UUID, PacketVehicleSnapshot> packetVehicles =
+            new ConcurrentHashMap<>();
 
     public VehicleMovementCheck(PacPlugin plugin) {
         this.plugin = plugin;
@@ -152,15 +173,68 @@ public final class VehicleMovementCheck extends AbstractCheck implements EventCh
         if (plugin.cancel(this, uuid)) event.setTo(event.getFrom());
     }
 
+    /**
+     * Packet-thread safe prefilter for ServerboundMoveVehiclePacket. It only
+     * rejects displacement far outside the most recent server vehicle motion;
+     * smaller vehicle-specific anomalies remain telemetry until they have an
+     * exact vanilla model.
+     */
+    public boolean onVehicleMovePacket(UUID uuid, double targetX, double targetY,
+                                       double targetZ, long now) {
+        PacketVehicleSnapshot state = packetVehicles.get(uuid);
+        if (state == null || now < state.sampledAt()
+                || now - state.sampledAt() > PACKET_SNAPSHOT_MAX_AGE_MILLIS
+                || !Double.isFinite(targetX) || !Double.isFinite(targetY)
+                || !Double.isFinite(targetZ))
+            return false;
+
+        double dx = targetX - state.x();
+        double dy = targetY - state.y();
+        double dz = targetZ - state.z();
+        double horizontal = Math.hypot(dx, dz);
+        double velocityHorizontal = Math.hypot(state.velocityX(), state.velocityZ());
+
+        // The server sample can precede the packet by more than one physics
+        // step, so scale the current authoritative motion generously. This is
+        // intentionally far below LiquidBounce VehicleControl SprintSpeed
+        // (5H/2Y) but above ordinary horse/minecart/strider transitions.
+        double legalHorizontal = Math.max(PACKET_MIN_HORIZONTAL_LIMIT,
+                velocityHorizontal * 3.0 + 0.75);
+        double legalVertical = Math.max(PACKET_MIN_VERTICAL_LIMIT,
+                Math.abs(state.velocityY()) * 3.0 + 0.55);
+        boolean impossible = horizontal > legalHorizontal
+                || Math.abs(dy) > legalVertical;
+        if (!impossible) return false;
+
+        flagLimited(uuid, () -> plugin.flag(uuid, this, String.format(java.util.Locale.ROOT,
+                "vehicle packet displacement: type=%s horizontal=%.3f legal=%.3f dy=%.3f legalY=%.3f",
+                state.type(), horizontal, legalHorizontal, dy, legalVertical)));
+        return plugin.cancel(this, uuid);
+    }
+
     /** Poll controlled non-boat vehicles because not every impossible state emits VehicleMoveEvent. */
     public void sampleOnlineVehicles() {
         int tick = Bukkit.getCurrentTick();
         for (Player player : Bukkit.getOnlinePlayers()) {
             Entity vehicle = player.getVehicle();
-            if (vehicle == null || vehicle instanceof Boat || vehicle.getPassengers().isEmpty()
-                    || !vehicle.getPassengers().get(0).getUniqueId().equals(player.getUniqueId()))
-                continue;
             UUID uuid = player.getUniqueId();
+            if (vehicle == null || vehicle.getPassengers().isEmpty()
+                    || !vehicle.getPassengers().get(0).getUniqueId().equals(uuid)) {
+                packetVehicles.remove(uuid);
+                continue;
+            }
+
+            Location sampled = vehicle.getLocation();
+            Vector sampledVelocity = vehicle.getVelocity();
+            packetVehicles.put(uuid, new PacketVehicleSnapshot(
+                    vehicle.getUniqueId(), vehicle.getType().name(),
+                    sampled.getX(), sampled.getY(), sampled.getZ(),
+                    sampledVelocity.getX(), sampledVelocity.getY(), sampledVelocity.getZ(),
+                    vehicle.hasGravity(),
+                    vehicle.hasGravity() && !vehicle.isOnGround() && !vehicle.isInWater(),
+                    vehicle.isInWater(), System.currentTimeMillis()));
+
+            if (vehicle instanceof Boat) continue;
             UUID vehicleId = vehicle.getUniqueId();
             if (!plugin.enabled(uuid, this) || plugin.isExempt(uuid)) {
                 vehicles.remove(vehicleId);
@@ -172,7 +246,7 @@ public final class VehicleMovementCheck extends AbstractCheck implements EventCh
                 state = new VehicleState(uuid, new GenericVehicleWindow());
                 vehicles.put(vehicleId, state);
             }
-            Location location = vehicle.getLocation();
+            Location location = sampled;
             boolean airborne = vehicle.hasGravity() && !vehicle.isOnGround() && !vehicle.isInWater();
             Finding finding = state.window().sample(tick, location.getX(), location.getY(), location.getZ(),
                     airborne, false);
@@ -197,6 +271,7 @@ public final class VehicleMovementCheck extends AbstractCheck implements EventCh
     @Override public void forget(UUID uuid) {
         super.forget(uuid);
         dismounts.remove(uuid);
+        packetVehicles.remove(uuid);
         vehicles.entrySet().removeIf(entry -> entry.getValue().driver().equals(uuid));
     }
 }
