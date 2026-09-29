@@ -26,13 +26,13 @@ class DefaultDetectorPolicyTest {
         var config = YamlConfiguration.loadConfiguration(new InputStreamReader(stream, StandardCharsets.UTF_8));
         ConfigurationSection detectors = config.getConfigurationSection("detectors");
         assertNotNull(detectors);
-        assertEquals(24, detectors.getKeys(false).size());
+        assertEquals(25, detectors.getKeys(false).size());
         assertTrue(detectors.contains("inventory-move"));
         for (String key : detectors.getKeys(false)) {
             assertEquals(!key.equals("xray"),
                     config.getBoolean("detectors." + key + ".enabled"),
                     key + " has an unexpected default state");
-            assertEquals(!key.equals("noclip"),
+            assertEquals(!key.equals("noclip") && !key.equals("vehicle-movement"),
                     config.getBoolean("detectors." + key + ".ban-enabled"),
                     key + " has an unexpected BAN default");
         }
