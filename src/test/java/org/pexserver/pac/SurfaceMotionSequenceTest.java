@@ -202,4 +202,50 @@ class SurfaceMotionSequenceTest {
     }
 
 
+    @Test void repeatedFastClimbExceedsVanillaLadderLimit() {
+        var sequence = new SurfaceMotionSequence();
+        var climb = new MotionEnvironment.ClimbSnapshot(true, 0, 64, 0, 1000);
+        sequence.accept(true, 0, 64, 0, false, surface(64, 1000, false, false),
+                false, climb, 1000);
+        for (int step = 1; step < 3; step++) {
+            long at = 1000 + step * 50L;
+            double y = 64 + step * 0.2872;
+            assertEquals(SurfaceMotionSequence.Anomaly.NONE,
+                    sequence.accept(true, 0, y, 0, false,
+                            surface(y, at, false, false), false,
+                            new MotionEnvironment.ClimbSnapshot(true, 0, y, 0, at), at));
+        }
+        long at = 1150;
+        double y = 64 + 3 * 0.2872;
+        assertEquals(SurfaceMotionSequence.Anomaly.CLIMB_SPEED,
+                sequence.accept(true, 0, y, 0, false,
+                        surface(y, at, false, false), false,
+                        new MotionEnvironment.ClimbSnapshot(true, 0, y, 0, at), at));
+    }
+
+    @Test void ordinaryLadderSpeedDoesNotFlag() {
+        var sequence = new SurfaceMotionSequence();
+        sequence.accept(true, 0, 64, 0, false, surface(64, 1000, false, false),
+                false, new MotionEnvironment.ClimbSnapshot(true, 0, 64, 0, 1000), 1000);
+        for (int step = 1; step <= 8; step++) {
+            long at = 1000 + step * 50L;
+            double y = 64 + step * 0.2;
+            assertEquals(SurfaceMotionSequence.Anomaly.NONE,
+                    sequence.accept(true, 0, y, 0, false,
+                            surface(y, at, false, false), false,
+                            new MotionEnvironment.ClimbSnapshot(true, 0, y, 0, at), at));
+        }
+    }
+
+    @Test void climbClipIsRejectedFromPreviousLadderPosition() {
+        var sequence = new SurfaceMotionSequence();
+        sequence.accept(true, 0, 64, 0, false, surface(64, 1000, false, false),
+                false, new MotionEnvironment.ClimbSnapshot(true, 0, 64, 0, 1000), 1000);
+        assertEquals(SurfaceMotionSequence.Anomaly.CLIMB_CLIP,
+                sequence.accept(true, 0, 69, 0, false,
+                        surface(64, 1050, false, false), false,
+                        new MotionEnvironment.ClimbSnapshot(true, 0, 64, 0, 1050), 1050));
+    }
+
+
 }
