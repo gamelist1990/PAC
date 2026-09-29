@@ -45,8 +45,12 @@ public final class BlockPushSuppressionWindow {
                 && horizontal < MAX_HORIZONTAL_FOR_SUPPRESSION;
         streak = suppressed ? Math.min(REQUIRED_STABLE_FRAMES, streak + 1)
                 : Math.max(0, streak - 2);
-        return new Finding(streak >= REQUIRED_STABLE_FRAMES, streak,
-                bestOutward, horizontal, directions);
+        if (streak < REQUIRED_STABLE_FRAMES)
+            return new Finding(false, streak, bestOutward, horizontal, directions);
+        int findingStreak = streak;
+        // Require several more stable frames before reporting again.
+        streak = REQUIRED_STABLE_FRAMES / 2;
+        return new Finding(true, findingStreak, bestOutward, horizontal, directions);
     }
 
     public void reset() {
