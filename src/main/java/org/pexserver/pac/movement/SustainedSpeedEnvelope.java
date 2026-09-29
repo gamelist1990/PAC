@@ -153,7 +153,10 @@ public final class SustainedSpeedEnvelope {
             dx -= collisions.entityPushX();
             dz -= collisions.entityPushZ();
         }
-        double drag = Math.max(0, Math.min(0.995, environment.horizontalDrag()));
+        double drag = environment.ordinaryGround()
+                ? Math.max(0, Math.min(0.995, environment.horizontalDrag()
+                        * environment.groundFriction() * environment.velocityMultiplier()))
+                : Math.max(0, Math.min(0.995, environment.horizontalDrag()));
         double speedCap = maximumSustainableSpeed(environment);
         externalMomentumBound = speedCap + Math.max(0, externalMomentumBound - speedCap)
                 * Math.pow(drag, frames);
@@ -163,11 +166,11 @@ public final class SustainedSpeedEnvelope {
                 environment.movementSpeed(), environment.groundFriction(),
                 environment.horizontalDrag(),
                 environment.sneaking() ? environment.sneakingSpeed() : 1.0f,
-                environment.itemUseMultiplier())
+                environment.itemUseMultiplier(), environment.velocityMultiplier())
             : MotionPredictor.maximumAirStep(
                 new MotionPredictor.Motion(0, 0, previousHorizontalSpeed),
                 environment.sprinting(), environment.horizontalDrag());
-        sprintJumpAllowance *= Math.pow(Math.min(1, environment.horizontalDrag()), frames);
+        sprintJumpAllowance *= Math.pow(drag, frames);
         VerticalTransition transition = legalVerticalTransition(collisions, x, y, z,
                 dx, dy, dz, environment.jumpStrength(), environment.sprinting(),
                 environment.ordinaryGround(), nowMillis);
@@ -186,7 +189,7 @@ public final class SustainedSpeedEnvelope {
                             environment.movementSpeed(), environment.groundFriction(),
                             environment.horizontalDrag(),
                             environment.sneaking() ? environment.sneakingSpeed() : 1.0f,
-                            environment.itemUseMultiplier()));
+                            environment.itemUseMultiplier(), environment.velocityMultiplier()));
             // Each grounded sprint jump adds a horizontal impulse. On ice the
             // previous impulse is retained, and a low ceiling can clip Y to
             // nearly zero while repeated jumps keep accelerating the player.
@@ -244,9 +247,9 @@ public final class SustainedSpeedEnvelope {
         double groundAcceleration = MotionPredictor.maximumGroundStepClient(zero,
                 environment.movementSpeed(), groundFriction, environment.horizontalDrag(),
                 environment.sneaking() ? environment.sneakingSpeed() : 1.0f,
-                environment.itemUseMultiplier());
+                environment.itemUseMultiplier(), environment.velocityMultiplier());
         double groundRetention = Math.max(0, Math.min(0.995,
-                groundFriction * environment.horizontalDrag()));
+                groundFriction * environment.horizontalDrag() * environment.velocityMultiplier()));
         double groundCap = groundAcceleration / (1 - groundRetention);
 
         double airAcceleration = MotionPredictor.maximumAirStep(zero,
