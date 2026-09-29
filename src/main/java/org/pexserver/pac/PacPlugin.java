@@ -117,6 +117,7 @@ public final class PacPlugin extends JavaPlugin implements Listener {
     private FastBreakCheck fastBreak;
     private NukerCheck nuker;
     private InventoryMoveCheck inventoryMove;
+    private ReachCheck reach;
     private KillAuraCheck killAura;
     private PacketListenerCommon packetRegistration;
     private PacketListenerCommon outgoingMotionRegistration;
@@ -155,7 +156,7 @@ public final class PacPlugin extends JavaPlugin implements Listener {
         checks.register(inventoryMove);
         CrashChestCheck crashChest = new CrashChestCheck(this);
         ScaffoldCheck scaffold = new ScaffoldCheck(this);
-        ReachCheck reach = new ReachCheck(this);
+        reach = new ReachCheck(this);
         killAura = new KillAuraCheck(this);
         checks.register(crashChest);
         checks.register(scaffold);
@@ -232,6 +233,10 @@ public final class PacPlugin extends JavaPlugin implements Listener {
                     catch (RuntimeException e) {
                         reportSampleFailure(3, "water motion", e);
                         waterMotion.forget(uuid);
+                    }
+                    try { if (reach != null) reach.samplePlayer(player); }
+                    catch (RuntimeException e) {
+                        reportSampleFailure(3, "combat target history", e);
                     }
                 }
             } finally {
