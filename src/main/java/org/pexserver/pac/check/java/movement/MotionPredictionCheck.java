@@ -5,6 +5,7 @@ import org.pexserver.pac.check.core.PacketCheck;
 import org.pexserver.pac.check.core.PacketContext;
 import org.pexserver.pac.movement.GroundMotionSequence;
 import org.pexserver.pac.movement.PredictionCorrectionLock;
+import org.pexserver.pac.movement.RapidPositionJumpWindow;
 import org.pexserver.pac.movement.SustainedSpeedEnvelope;
 import org.pexserver.pac.movement.SustainedSpeedEvidence;
 import org.pexserver.pac.movement.VanillaPositionBurst;
@@ -22,6 +23,7 @@ public final class MotionPredictionCheck extends AbstractCheck implements Packet
         final SustainedSpeedEnvelope speedEnvelope = new SustainedSpeedEnvelope();
         final PredictionCorrectionLock correctionLock = new PredictionCorrectionLock();
         final VanillaPositionBurst positionBurst = new VanillaPositionBurst();
+        final RapidPositionJumpWindow rapidJump = new RapidPositionJumpWindow();
         double buffer;
         long serverMotionSequence;
         boolean serverMotionActive;
@@ -58,8 +60,24 @@ public final class MotionPredictionCheck extends AbstractCheck implements Packet
             state.speedEnvelope.timing(context.serverTiming());
             var location = context.location();
             long now = System.currentTimeMillis();
+            long nowNanos = System.nanoTime();
+            var rapidJump = state.rapidJump.accept(context.flying().hasPositionChanged(),
+                    location.getX(), location.getY(), location.getZ(), nowNanos,
+                    context.timingUncertain(),
+                    context.plugin().environment().movementSuppressed(context.uuid()),
+                    context.externalImpulse() != null || serverMotionAtEntry != null
+                            || context.plugin().recentExternalMotion(context.uuid()),
+                    context.plugin().environment().authorizedFlightMovement(context.uuid()));
+            if (rapidJump.impossible()) {
+                flagLimited(context, () -> String.format(Locale.ROOT,
+                        "impossible rapid position jump: distance=%.3f repeats=%d interval=%dms",
+                        rapidJump.distance(), rapidJump.repeatedPositions(),
+                        rapidJump.elapsedMillis()));
+                correct(context, state, state.sequence.lastPosition(), state.sequence.motion(), true);
+                return;
+            }
             var burst = state.positionBurst.accept(context.flying().hasPositionChanged(),
-                    location.getY(), System.nanoTime(), context.timingUncertain());
+                    location.getY(), nowNanos, context.timingUncertain());
             if (burst.impossible()) {
                 flagLimited(context, () -> String.format(Locale.ROOT,
                         "non-vanilla same-tick vertical sequence: rise=%.3f ratios=(%.3f, %.3f) packets=%d",
@@ -114,6 +132,7 @@ public final class MotionPredictionCheck extends AbstractCheck implements Packet
                 state.verified = null;
                 state.correctionLock.clear();
                 state.positionBurst.reset();
+                state.rapidJump.reset();
                 if (context.flying().hasPositionChanged()) {
                     if (state.pendingMomentum > 0) {
                         state.speedEnvelope.serverVelocity(state.pendingMomentum,
@@ -360,6 +379,7 @@ public final class MotionPredictionCheck extends AbstractCheck implements Packet
             state.sequence.rebase(x, y, z, velocityX, velocityY, velocityZ,
                     environment, System.currentTimeMillis());
             state.positionBurst.reset();
+            state.rapidJump.reset();
             state.verified = new GroundMotionSequence.Position(x, y, z);
             state.speedEnvelope.rebase(x, y, z, System.nanoTime());
         }
