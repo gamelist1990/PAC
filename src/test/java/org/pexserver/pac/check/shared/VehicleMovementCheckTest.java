@@ -44,4 +44,31 @@ class VehicleMovementCheckTest {
                     false, false).impossible());
         }
     }
+    @Test void vehicleControlSprintPacketIsRejectedBeforeServerApply() {
+        var finding = VehicleMovementCheck.packetFinding(
+                0, 64, 0, 0.2, 0, 0,
+                5.0, 66.0, 0, "HORSE");
+
+        assertTrue(finding.evaluated());
+        assertTrue(finding.impossible());
+    }
+
+    @Test void ordinaryVehiclePacketInsideConservativeEnvelopeIsAccepted() {
+        var finding = VehicleMovementCheck.packetFinding(
+                0, 64, 0, 0.35, 0.1, 0,
+                0.65, 64.25, 0, "HORSE");
+
+        assertTrue(finding.evaluated());
+        assertFalse(finding.impossible());
+    }
+
+    @Test void legitimateHighServerVelocityExpandsVehiclePacketEnvelope() {
+        var finding = VehicleMovementCheck.packetFinding(
+                0, 64, 0, 2.0, 0.7, 0,
+                5.5, 65.9, 0, "MINECART");
+
+        assertFalse(finding.impossible(),
+                "server-authoritative vehicle momentum must expand the packet envelope");
+    }
+
 }
