@@ -32,6 +32,7 @@ public final class GroundMotionSequence {
     private float sneakingSpeed = 0.3f, itemUseMultiplier = 1.0f;
     private float stuckHorizontalMultiplier = 1.0f;
     private float stuckVerticalMultiplier = 1.0f;
+    private float velocityMultiplier = 1.0f;
     private float yaw;
     private boolean takeoffArmed;
     private double takeoffY;
@@ -72,6 +73,7 @@ public final class GroundMotionSequence {
             itemUseMultiplier = environment.itemUseMultiplier();
             stuckHorizontalMultiplier = environment.stuckHorizontalMultiplier();
             stuckVerticalMultiplier = environment.stuckVerticalMultiplier();
+            velocityMultiplier = environment.velocityMultiplier();
             takeoffJumpStrength = environment.jumpStrength();
         }
     }
@@ -182,7 +184,7 @@ public final class GroundMotionSequence {
         double legalGroundTravel = ordinary
                 ? MotionPredictor.maximumGroundTravelClient(previousMotion, environment.movementSpeed(),
                         environment.groundFriction(), environment.horizontalDrag(), sneakScale,
-                        environment.itemUseMultiplier(), physicsFrames)
+                        environment.itemUseMultiplier(), physicsFrames, environment.velocityMultiplier())
                         * environment.stuckHorizontalMultiplier() : 0;
         boolean stickyWeb = ordinary && environment.stuckHorizontalMultiplier() < 0.999f;
         double allowedHorizontal = ordinary
@@ -245,6 +247,7 @@ public final class GroundMotionSequence {
                 && itemUseMultiplier == environment.itemUseMultiplier()
                 && stuckHorizontalMultiplier == environment.stuckHorizontalMultiplier()
                 && stuckVerticalMultiplier == environment.stuckVerticalMultiplier()
+                && velocityMultiplier == environment.velocityMultiplier()
                 && takeoffJumpStrength == environment.jumpStrength()
                 && Math.abs(movementSpeed - environment.movementSpeed()) < 1.0E-6;
         boolean sameGroundModel = sameGroundConditions && Math.abs(dy) <= 0.03;
@@ -256,7 +259,8 @@ public final class GroundMotionSequence {
         double legalStep = ordinary
                 ? MotionPredictor.maximumGroundStepClient(previousMotion, environment.movementSpeed(),
                         environment.groundFriction(), environment.horizontalDrag(), sneakScale,
-                        environment.itemUseMultiplier()) * environment.stuckHorizontalMultiplier() : 0;
+                        environment.itemUseMultiplier(), environment.velocityMultiplier())
+                        * environment.stuckHorizontalMultiplier() : 0;
         boolean headBonkSprintJump = ordinary && environment.sprinting()
                 && !uncertainCollision && sameGroundConditions
                 && dy >= -0.015 && dy <= 0.03 && collisions != null
@@ -293,6 +297,7 @@ public final class GroundMotionSequence {
             itemUseMultiplier = environment.itemUseMultiplier();
             stuckHorizontalMultiplier = environment.stuckHorizontalMultiplier();
             stuckVerticalMultiplier = environment.stuckVerticalMultiplier();
+            velocityMultiplier = environment.velocityMultiplier();
         }
         // The server can already report on-ground on the final *upward* frame
         // of a jump onto a higher block. That frame is a landing, not a new
@@ -384,8 +389,8 @@ public final class GroundMotionSequence {
                 collisions == null ? 0 : collisions.entityPushHorizontalAllowance());
         double legalSingleStep = MotionPredictor.maximumGroundStepClient(
                 previousMotion, environment.movementSpeed(), environment.groundFriction(),
-                environment.horizontalDrag(), sneakScale, environment.itemUseMultiplier())
-                * environment.stuckHorizontalMultiplier();
+                environment.horizontalDrag(), sneakScale, environment.itemUseMultiplier(),
+                environment.velocityMultiplier()) * environment.stuckHorizontalMultiplier();
         double speedExcess = Math.max(0, horizontalResidual - legalSingleStep
                 - (headBonkSprintJump ? 0.2 : 0));
         float heading = packetYawKnown ? yaw : environment.yaw();
@@ -439,17 +444,19 @@ public final class GroundMotionSequence {
             return MotionPredictor.predictGroundClient(previous, actual, heading,
                     environment.movementSpeed(), environment.groundFriction(),
                     environment.horizontalDrag(), sneakScale,
-                    environment.itemUseMultiplier()).offset();
+                    environment.itemUseMultiplier(), environment.velocityMultiplier()).offset();
         }
         double offset = MotionPredictor.predictGroundInputClient(previous, actual,
                 heading, environment.movementSpeed(), environment.groundFriction(),
                 environment.horizontalDrag(), sneakScale,
-                environment.itemUseMultiplier(), inputs.current()).offset();
+                environment.itemUseMultiplier(), environment.velocityMultiplier(),
+                inputs.current()).offset();
         if (inputs.previous() != null) offset = Math.min(offset,
                 MotionPredictor.predictGroundInputClient(previous, actual,
                         heading, environment.movementSpeed(), environment.groundFriction(),
                         environment.horizontalDrag(), sneakScale,
-                        environment.itemUseMultiplier(), inputs.previous()).offset());
+                        environment.itemUseMultiplier(), environment.velocityMultiplier(),
+                        inputs.previous()).offset());
         return offset;
     }
 
@@ -465,7 +472,7 @@ public final class GroundMotionSequence {
             MotionPredictor.Motion free = MotionPredictor.predictGroundInputClient(initial,
                     new MotionPredictor.Motion(0, 0, 0), heading, environment.movementSpeed(),
                     environment.groundFriction(), environment.horizontalDrag(), sneakScale,
-                    environment.itemUseMultiplier(), input).closest();
+                    environment.itemUseMultiplier(), environment.velocityMultiplier(), input).closest();
             for (int verticalChoice = 0; verticalChoice < 2; verticalChoice++) {
                 double wantedY = verticalChoice == 0 ? 0 : -environment.gravity();
                 int moveCount = collisions.resolveInto(startX, startY, startZ,
@@ -557,7 +564,7 @@ public final class GroundMotionSequence {
             MotionPredictor.Motion free = MotionPredictor.predictGroundInputClient(initial,
                     new MotionPredictor.Motion(0, 0, 0), heading, environment.movementSpeed(),
                     environment.groundFriction(), environment.horizontalDrag(), sneakScale,
-                    environment.itemUseMultiplier(), input).closest();
+                    environment.itemUseMultiplier(), environment.velocityMultiplier(), input).closest();
             int moveCount = collisions.resolveInto(startX, startY, startZ,
                     free.dx(), environment.jumpStrength(), free.dz(), true, moves);
             for (int moveIndex = 0; moveIndex < moveCount; moveIndex++) {
