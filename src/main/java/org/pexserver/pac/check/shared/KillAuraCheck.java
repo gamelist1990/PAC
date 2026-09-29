@@ -197,10 +197,15 @@ public final class KillAuraCheck extends AbstractCheck implements PacketCheck, E
         CombatState state = combat.computeIfAbsent(uuid, ignored -> new CombatState());
         CombatPatternMonitor.Finding finding = null;
         synchronized (state) {
+            if (plugin.isBedrockPlayer(uuid) && !supportsBedrockInputMode(state.bedrockInputMode)) {
+                state.resetStrictEvidence();
+                return;
+            }
             long now = System.currentTimeMillis();
             markAttack(state, now);
             state.pendingAttack = new PendingAttack(entityId, now, state.latestYaw, state.latestPitch,
                     state.hasLatestLook);
+            state.attackRotations.attackPacket(now);
             if (entityId >= 0)
                 finding = state.combatPatterns.attackPacket(entityId, now);
         }
@@ -213,11 +218,17 @@ public final class KillAuraCheck extends AbstractCheck implements PacketCheck, E
         state.lastAttack = now;
     }
 
-    private void report(UUID uuid, CombatState state, PacketContext packetContext, String source, String detail) {
-        String message = source + ": " + detail;
-        if (packetContext == null) flagLimited(uuid, () -> plugin.flag(uuid, this, message));
-        else flagLimited(packetContext, message);
-        state.aimConfirmedUntil = System.currentTimeMillis() + AIM_WINDOW_MILLIS;
+    private void reportType(UUID uuid, CombatState state, KillAuraType type,
+                            String source, String detail,
+                            Map<String, Double> metrics, int weight) {
+        String message = type.format(source, detail);
+        synchronized (state) {
+            state.aimConfirmedUntil = System.currentTimeMillis() + AIM_WINDOW_MILLIS;
+        }
+        if (metrics == null || metrics.isEmpty())
+            flagLimited(uuid, () -> plugin.flag(uuid, this, message));
+        else
+            flagLimited(uuid, () -> plugin.flag(uuid, this, message, metrics, weight));
     }
 
     private void submitMxPredictions(UUID uuid, CombatState state, ModelWindows windows) {
@@ -390,7 +401,8 @@ public final class KillAuraCheck extends AbstractCheck implements PacketCheck, E
                     || event.getFrom().getPitch() != event.getTo().getPitch();
             if (!plugin.isBedrockPlayer(uuid) && moved && !rotationChanged) {
                 for (MxAimSuite.Finding finding : state.javaAim.noRotation(now, state.lastAttack))
-                    report(uuid, state, null, finding.source(), finding.detail());
+                    reportType(uuid, state, KillAuraType.E, finding.source(),
+                            finding.detail(), Map.of(), 2);
             }
         }
     }
