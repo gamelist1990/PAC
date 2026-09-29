@@ -4,6 +4,24 @@ package org.pexserver.pac.movement;
 public final class ElytraMotionPredictor {
     private ElytraMotionPredictor() { }
 
+    /**
+     * Vanilla firework acceleration while attached to a fall-flying player.
+     * Minecraft applies: v += look*0.1 + (look*1.5 - v)*0.5.
+     */
+    public static MotionPredictor.Motion fireworkBoost(MotionPredictor.Motion velocity,
+                                                       float yaw, float pitch) {
+        double yawRadians = Math.toRadians(yaw);
+        double pitchRadians = Math.toRadians(pitch);
+        double horizontal = Math.cos(pitchRadians);
+        double lookX = -Math.sin(yawRadians) * horizontal;
+        double lookY = -Math.sin(pitchRadians);
+        double lookZ = Math.cos(yawRadians) * horizontal;
+        return new MotionPredictor.Motion(
+                velocity.dx() + lookX * 0.1 + (lookX * 1.5 - velocity.dx()) * 0.5,
+                velocity.dy() + lookY * 0.1 + (lookY * 1.5 - velocity.dy()) * 0.5,
+                velocity.dz() + lookZ * 0.1 + (lookZ * 1.5 - velocity.dz()) * 0.5);
+    }
+
     public static MotionPredictor.Motion next(MotionPredictor.Motion velocity,
                                               float yaw, float pitch, double gravity) {
         return next(velocity, yaw, pitch, gravity, false);
