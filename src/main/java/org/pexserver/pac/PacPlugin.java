@@ -56,6 +56,7 @@ import org.pexserver.pac.check.shared.ScaffoldCheck;
 import org.pexserver.pac.check.shared.ReachCheck;
 import org.pexserver.pac.check.shared.KillAuraCheck;
 import org.pexserver.pac.check.shared.NoClipCheck;
+import org.pexserver.pac.check.shared.VehicleMovementCheck;
 import org.pexserver.pac.check.shared.AttributeSwapGuard;
 import org.pexserver.pac.check.shared.XrayCheck;
 import org.pexserver.pac.command.PacCommand;
@@ -118,6 +119,7 @@ public final class PacPlugin extends JavaPlugin implements Listener {
     private NukerCheck nuker;
     private InventoryMoveCheck inventoryMove;
     private ReachCheck reach;
+    private VehicleMovementCheck vehicleMovement;
     private KillAuraCheck killAura;
     private PacketListenerCommon packetRegistration;
     private PacketListenerCommon outgoingMotionRegistration;
@@ -157,10 +159,12 @@ public final class PacPlugin extends JavaPlugin implements Listener {
         CrashChestCheck crashChest = new CrashChestCheck(this);
         ScaffoldCheck scaffold = new ScaffoldCheck(this);
         reach = new ReachCheck(this);
+        vehicleMovement = new VehicleMovementCheck(this);
         killAura = new KillAuraCheck(this);
         checks.register(crashChest);
         checks.register(scaffold);
         checks.register(reach);
+        checks.register(vehicleMovement);
         checks.register(killAura);
         checks.register(new BedrockPredictionCheck());
         XrayCheck xray = new XrayCheck(this);
@@ -190,6 +194,7 @@ public final class PacPlugin extends JavaPlugin implements Listener {
         Bukkit.getPluginManager().registerEvents(crashChest, this);
         Bukkit.getPluginManager().registerEvents(scaffold, this);
         Bukkit.getPluginManager().registerEvents(reach, this);
+        Bukkit.getPluginManager().registerEvents(vehicleMovement, this);
         Bukkit.getPluginManager().registerEvents(killAura, this);
         Bukkit.getPluginManager().registerEvents(xray, this);
         Bukkit.getPluginManager().registerEvents(noClip, this);
@@ -245,6 +250,7 @@ public final class PacPlugin extends JavaPlugin implements Listener {
         }, 1L, 1L);
         Bukkit.getScheduler().runTaskTimer(this, () -> airPrediction.sampleSilence(this), 20L, 20L);
         Bukkit.getScheduler().runTaskTimer(this, boatFlight::sampleOnlineVehicles, 1L, 1L);
+        Bukkit.getScheduler().runTaskTimer(this, vehicleMovement::sampleOnlineVehicles, 1L, 1L);
         PacCommand command = new PacCommand(this);
         getCommand("pac").setExecutor(command);
         getCommand("pac").setTabCompleter(command);
