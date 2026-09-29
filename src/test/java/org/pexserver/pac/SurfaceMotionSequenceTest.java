@@ -161,6 +161,21 @@ class SurfaceMotionSequenceTest {
                         airborne(66.6, 1200), 1200));
     }
 
+    @Test void blockWalkFakeCobwebOrSnowSupportBecomesAirGroundClaim() {
+        var sequence = new SurfaceMotionSequence();
+        sequence.accept(true, 0, 67.0, 0, false, airborne(67.0, 1000), 1000);
+
+        for (int step = 1; step < 4; step++) {
+            long at = 1000 + step * 50L;
+            assertEquals(SurfaceMotionSequence.Anomaly.NONE,
+                    sequence.accept(true, step * 0.08, 67.0, 0, true,
+                            airborne(67.0, at), at));
+        }
+        assertEquals(SurfaceMotionSequence.Anomaly.AIR_GROUND_CLAIM,
+                sequence.accept(true, 0.32, 67.0, 0, true,
+                        airborne(67.0, 1200), 1200));
+    }
+
     @Test void isolatedAirborneGroundClaimDoesNotFlag() {
         var sequence = new SurfaceMotionSequence();
         sequence.accept(true, 0, 67.0, 0, false, airborne(67.0, 1000), 1000);
