@@ -1,10 +1,12 @@
 package org.pexserver.pac.check.shared;
 
+import org.bukkit.Bukkit;
 import org.bukkit.GameMode;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.entity.Player;
+import org.bukkit.craftbukkit.entity.CraftPlayer;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
@@ -17,6 +19,9 @@ import org.bukkit.util.VoxelShape;
 import org.pexserver.pac.PacPlugin;
 import org.pexserver.pac.check.core.AbstractCheck;
 import org.pexserver.pac.check.core.EventCheck;
+import org.pexserver.pac.movement.BlockPushSuppressionWindow;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.phys.AABB;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -37,6 +42,7 @@ public final class NoClipCheck extends AbstractCheck implements EventCheck, List
 
     private final PacPlugin plugin;
     private final Map<UUID, PhaseBuffer> buffers = new HashMap<>();
+    private final Map<UUID, BlockPushSuppressionWindow> blockPushWindows = new HashMap<>();
     private final Map<PlayerMoveEvent, MoveSample> moveSamples = new WeakHashMap<>();
 
     public NoClipCheck(PacPlugin plugin) { this.plugin = plugin; }
@@ -56,6 +62,7 @@ public final class NoClipCheck extends AbstractCheck implements EventCheck, List
         UUID uuid = player.getUniqueId();
         if (event instanceof PlayerTeleportEvent) {
             buffers.remove(uuid);
+            blockPushWindows.remove(uuid);
             return;
         }
         MoveSample sample = moveSamples.get(event);
@@ -69,9 +76,13 @@ public final class NoClipCheck extends AbstractCheck implements EventCheck, List
         }
 
         long now = System.currentTimeMillis();
-        if ((plugin.environment() != null && plugin.environment().movementSuppressed(uuid))
-                || plugin.recentExternalMotion(uuid)) {
+        boolean movementInvalidated = (plugin.environment() != null
+                && plugin.environment().movementSuppressed(uuid))
+                || plugin.recentExternalMotion(uuid)
+                || plugin.recentPluginVelocity(uuid);
+        if (movementInvalidated) {
             decay(uuid, now);
+            blockPushWindows.remove(uuid);
             return;
         }
 
@@ -79,6 +90,30 @@ public final class NoClipCheck extends AbstractCheck implements EventCheck, List
         double dy = to.getY() - from.getY();
         double dz = to.getZ() - from.getZ();
         double distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+        // LiquidBounce NoPush BLOCKS cancels LocalPlayer#moveTowardsClosestSpace.
+        // Reconstruct the same client-side suffocating-block geometry and only
+        // score repeated frames where an outward direction exists but the
+        // client remains embedded without making meaningful outward progress.
+        int pushDirections = blockPushDirections(player, from);
+        int targetPushDirections = blockPushDirections(player, to);
+        BlockPushSuppressionWindow pushWindow = blockPushWindows.computeIfAbsent(
+                uuid, ignored -> new BlockPushSuppressionWindow());
+        BlockPushSuppressionWindow.Finding pushFinding = pushWindow.sample(
+                Bukkit.getCurrentTick(), pushDirections, dx, dz,
+                targetPushDirections != 0, false);
+        if (pushFinding.suspicious()) {
+            Map<String, Double> metrics = Map.of(
+                    "block_push_outward", pushFinding.bestOutward(),
+                    "block_push_horizontal", pushFinding.horizontal(),
+                    "block_push_directions", (double) pushFinding.directions(),
+                    "block_push_streak", (double) pushFinding.streak());
+            flagLimited(uuid, () -> plugin.flag(uuid, this, String.format(java.util.Locale.ROOT,
+                    "client block-push suppression: outward=%.4f horizontal=%.4f directions=%d streak=%d",
+                    pushFinding.bestOutward(), pushFinding.horizontal(),
+                    pushFinding.directions(), pushFinding.streak()), metrics, 2));
+        }
+
         double maxDistance = bounded("max-distance", 10.0, 1.0, 10.0);
         if (distance < 0.01 || distance > maxDistance) {
             decay(uuid, now);
@@ -148,17 +183,23 @@ public final class NoClipCheck extends AbstractCheck implements EventCheck, List
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onTeleport(PlayerTeleportEvent event) {
-        buffers.remove(event.getPlayer().getUniqueId());
+        UUID uuid = event.getPlayer().getUniqueId();
+        buffers.remove(uuid);
+        blockPushWindows.remove(uuid);
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onWorldChange(PlayerChangedWorldEvent event) {
-        buffers.remove(event.getPlayer().getUniqueId());
+        UUID uuid = event.getPlayer().getUniqueId();
+        buffers.remove(uuid);
+        blockPushWindows.remove(uuid);
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onGameModeChange(PlayerGameModeChangeEvent event) {
-        buffers.remove(event.getPlayer().getUniqueId());
+        UUID uuid = event.getPlayer().getUniqueId();
+        buffers.remove(uuid);
+        blockPushWindows.remove(uuid);
     }
 
     private CollisionScan scanCollisionShapes(World world, NoClipGeometry.Aabb body,
@@ -203,6 +244,67 @@ public final class NoClipCheck extends AbstractCheck implements EventCheck, List
             }
         }
         return new CollisionScan(shapes, (int) volume);
+    }
+
+    private static int blockPushDirections(Player player, Location at) {
+        if (player == null || at == null || at.getWorld() == null) return 0;
+        var handle = ((CraftPlayer) player).getHandle();
+        double width = player.getBoundingBox().getWidthX();
+        double height = player.getBoundingBox().getHeight();
+        if (!Double.isFinite(width) || !Double.isFinite(height)
+                || width < 0.2 || width > 1.5 || height < 0.5 || height > 3.0)
+            return 0;
+
+        AABB body = new AABB(at.getX() - width * 0.5, at.getY(),
+                at.getZ() - width * 0.5, at.getX() + width * 0.5,
+                at.getY() + height, at.getZ() + width * 0.5);
+        double offset = width * 0.35;
+        double[][] corners = {
+                {at.getX() - offset, at.getZ() + offset},
+                {at.getX() - offset, at.getZ() - offset},
+                {at.getX() + offset, at.getZ() - offset},
+                {at.getX() + offset, at.getZ() + offset}
+        };
+        int directions = 0;
+        for (double[] corner : corners)
+            directions |= blockPushDirection(handle, body, corner[0], corner[1]);
+        return directions;
+    }
+
+    private static int blockPushDirection(net.minecraft.server.level.ServerPlayer handle,
+                                          AABB body, double x, double z) {
+        BlockPos pos = BlockPos.containing(x, body.minY, z);
+        if (!suffocatesAt(handle, body, pos)) return 0;
+
+        double xd = x - pos.getX();
+        double zd = z - pos.getZ();
+        double closest = Double.MAX_VALUE;
+        int best = 0;
+
+        if (xd < closest && !suffocatesAt(handle, body, pos.west())) {
+            closest = xd;
+            best = BlockPushSuppressionWindow.WEST;
+        }
+        double east = 1.0 - xd;
+        if (east < closest && !suffocatesAt(handle, body, pos.east())) {
+            closest = east;
+            best = BlockPushSuppressionWindow.EAST;
+        }
+        if (zd < closest && !suffocatesAt(handle, body, pos.north())) {
+            closest = zd;
+            best = BlockPushSuppressionWindow.NORTH;
+        }
+        double south = 1.0 - zd;
+        if (south < closest && !suffocatesAt(handle, body, pos.south()))
+            best = BlockPushSuppressionWindow.SOUTH;
+        return best;
+    }
+
+    private static boolean suffocatesAt(net.minecraft.server.level.ServerPlayer handle,
+                                         AABB body, BlockPos pos) {
+        AABB testArea = new AABB(pos.getX(), body.minY, pos.getZ(),
+                pos.getX() + 1.0, body.maxY, pos.getZ() + 1.0).deflate(1.0E-7);
+        return handle.level().collidesWithSuffocatingBlock(handle, testArea);
     }
 
     private static NoClipGeometry.Aabb playerBody(Player player, Location from) {
@@ -258,5 +360,6 @@ public final class NoClipCheck extends AbstractCheck implements EventCheck, List
     @Override public void forget(UUID uuid) {
         super.forget(uuid);
         buffers.remove(uuid);
+        blockPushWindows.remove(uuid);
     }
 }
