@@ -1071,8 +1071,13 @@ public final class MotionEnvironment implements Listener {
         if (!matchesExpectedPacCorrection(uuid, event.getTo())) grace(uuid, 250);
     }
 
-    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    @EventHandler(priority = EventPriority.MONITOR)
     public void onToggleFlight(PlayerToggleFlightEvent event) {
+        // The Java client flips its local flying flag before it sends the
+        // abilities packet. If another plugin cancels this toggle, Paper only
+        // sends the corrective abilities after the event returns. Movement in
+        // that short transition therefore must not be judged as ordinary air
+        // gravity, even though the server never committed flying=true.
         Player player = event.getPlayer();
         var flyingSpeed = player.getAttribute(Attribute.FLYING_SPEED);
         flightPermissions.update(player.getUniqueId(), player.getAllowFlight(), event.isFlying(),
