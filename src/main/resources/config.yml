@@ -2,7 +2,7 @@ alerts:
   enabled: true
   prefix: '&8[&cPAC&8] &7'
   minimum-interval-ms: 1000
-config-version: 15
+config-version: 16
 api:
   # External plugins can only change PAC settings when this is true.
   control-authority: false
@@ -122,6 +122,16 @@ detectors:
   crash-chest:
     enabled: true
     ban-enabled: true
+    cancel: true
+    alert-score-threshold: 1
+    kick-enabled: false
+    kick-score-threshold: 10
+  exploit-actions:
+    # MultiActions/VehicleOneHit prevention. Automatic punishments stay off by
+    # default because custom gameplay plugins may intentionally permit unusual
+    # action combinations; impossible actions are still cancelled when enabled.
+    enabled: true
+    ban-enabled: false
     cancel: true
     alert-score-threshold: 1
     kick-enabled: false
