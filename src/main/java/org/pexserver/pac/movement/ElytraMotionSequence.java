@@ -47,7 +47,7 @@ public final class ElytraMotionSequence {
             reset();
             return Sample.skipped();
         }
-        if (environment == null || !environment.gliding() || environment.fireworkBoost()
+        if (environment == null || !environment.gliding()
                 || now < environment.capturedAt() || now - environment.capturedAt() > 200
                 || !environment.near(packetX, packetY, packetZ, 2.0)
                 || impulse != null) {
@@ -106,26 +106,27 @@ public final class ElytraMotionSequence {
                 for (int frame = 0; frame < frames && completeReplay; frame++) {
                     List<Path> next = new ArrayList<>();
                     for (Path path : paths) {
-                        MotionPredictor.Motion wanted = ElytraMotionPredictor.next(path.velocity(),
-                                candidateYaw, candidatePitch, environment.gravity(),
-                                environment.slowFalling());
-                        int count = collisions.resolveInto(path.x(), path.y(), path.z(),
-                                wanted.dx(), wanted.dy(), wanted.dz(), false, moves);
-                        if (count == 0) {
-                            completeReplay = false;
-                            break;
+                        for (MotionPredictor.Motion wanted : frameCandidates(
+                                path.velocity(), candidateYaw, candidatePitch, environment)) {
+                            int count = collisions.resolveInto(path.x(), path.y(), path.z(),
+                                    wanted.dx(), wanted.dy(), wanted.dz(), false, moves);
+                            if (count == 0) {
+                                completeReplay = false;
+                                break;
+                            }
+                            for (int index = 0; index < count; index++) {
+                                double movedX = moves.x(index), movedY = moves.y(index), movedZ = moves.z(index);
+                                MotionPredictor.Motion resolved = new MotionPredictor.Motion(
+                                        Math.abs(movedX - wanted.dx()) > 1.0E-7 ? 0 : wanted.dx(),
+                                        Math.abs(movedY - wanted.dy()) > 1.0E-7 ? 0 : wanted.dy(),
+                                        Math.abs(movedZ - wanted.dz()) > 1.0E-7 ? 0 : wanted.dz());
+                                next.add(new Path(path.x() + movedX, path.y() + movedY,
+                                        path.z() + movedZ, resolved));
+                                if (next.size() >= 64) break;
+                            }
+                            if (!completeReplay || next.size() >= 64) break;
                         }
-                        for (int index = 0; index < count; index++) {
-                            double movedX = moves.x(index), movedY = moves.y(index), movedZ = moves.z(index);
-                            MotionPredictor.Motion resolved = new MotionPredictor.Motion(
-                                    Math.abs(movedX - wanted.dx()) > 1.0E-7 ? 0 : wanted.dx(),
-                                    Math.abs(movedY - wanted.dy()) > 1.0E-7 ? 0 : wanted.dy(),
-                                    Math.abs(movedZ - wanted.dz()) > 1.0E-7 ? 0 : wanted.dz());
-                            next.add(new Path(path.x() + movedX, path.y() + movedY,
-                                    path.z() + movedZ, resolved));
-                            if (next.size() >= 64) break;
-                        }
-                        if (next.size() >= 64) break;
+                        if (!completeReplay || next.size() >= 64) break;
                     }
                     paths = next;
                 }
@@ -150,6 +151,25 @@ public final class ElytraMotionSequence {
         baseline(packetX, packetY, packetZ, now);
         if (!Double.isFinite(bestTotal)) return Sample.skipped();
         return new Sample(true, bestHorizontal, bestVertical);
+    }
+
+    private static MotionPredictor.Motion[] frameCandidates(
+            MotionPredictor.Motion velocity, float yaw, float pitch,
+            ElytraSnapshot environment) {
+        MotionPredictor.Motion ordinary = ElytraMotionPredictor.next(
+                velocity, yaw, pitch, environment.gravity(), environment.slowFalling());
+        if (!environment.fireworkBoost()) return new MotionPredictor.Motion[] {ordinary};
+
+        // Firework and living-entity ticks can straddle the packet sample
+        // boundary. Accept both vanilla orderings, plus a boundary frame with
+        // no boost. A client-side multiplier still falls outside every vanilla
+        // branch on repeated boost frames.
+        MotionPredictor.Motion boostAfter =
+                ElytraMotionPredictor.fireworkBoost(ordinary, yaw, pitch);
+        MotionPredictor.Motion boostBefore = ElytraMotionPredictor.next(
+                ElytraMotionPredictor.fireworkBoost(velocity, yaw, pitch),
+                yaw, pitch, environment.gravity(), environment.slowFalling());
+        return new MotionPredictor.Motion[] {ordinary, boostAfter, boostBefore};
     }
 
     public void reset() {
