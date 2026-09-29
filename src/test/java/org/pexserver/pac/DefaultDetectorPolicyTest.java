@@ -43,6 +43,7 @@ class DefaultDetectorPolicyTest {
         assertTrue(config.getBoolean("detectors.noclip.cancel"));
         assertEquals(0.03, config.getDouble("detectors.noclip.collision-tolerance"), 1.0e-12);
         assertTrue(config.getBoolean("detectors.packet-flood.cancel"));
+        assertEquals(1200, config.getInt("detectors.packet-flood.max-decoded-per-second"));
         assertTrue(config.getBoolean("detectors.nuker.cancel"));
         assertTrue(config.getBoolean("detectors.anti-hunger.cancel"));
         assertTrue(config.getBoolean("detectors.timer-prediction.cancel"));
