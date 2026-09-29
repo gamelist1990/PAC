@@ -50,6 +50,24 @@ class SustainedSpeedEnvelopeTest {
                     + " speed=" + sample.speed() + " legal=" + sample.legalSpeed());
         }
     }
+    @Test void queuedPositionlessFramesDoNotInflateVanillaSprintSpeed() {
+        var envelope = new SustainedSpeedEnvelope();
+        long start = BASE_NANOS;
+        envelope.accept(0, 64, 0, ground(0, 0, 64), null, start, false);
+
+        // Three client physics frames can be represented by one coordinate
+        // packet when two intervening movement packets only carry rotation/
+        // ground state. If those omitted frames are ignored, 0.84 blocks is
+        // incorrectly judged as a one-tick ~0.84 speed burst.
+        envelope.positionless();
+        envelope.positionless();
+        var sample = envelope.accept(0.84, 64, 0, ground(3, 0.84, 64), null,
+                start + 55_000_000L, false);
+
+        assertFalse(sample.flagged());
+        assertEquals(0.28, sample.speed(), 1.0e-9);
+    }
+
     @Test void postGravitySprintJumpSignatureKeepsVanillaHorizontalImpulse() {
         var envelope = new SustainedSpeedEnvelope();
         double y = 64;

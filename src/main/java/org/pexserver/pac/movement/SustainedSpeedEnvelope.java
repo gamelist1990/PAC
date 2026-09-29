@@ -30,7 +30,17 @@ public final class SustainedSpeedEnvelope {
     private double previousHorizontalSpeed;
     private boolean previousGround;
     private boolean serverVelocityActive;
+    private int positionlessFrames;
     private GroundMotionSequence.Position suspiciousAnchor;
+
+    /**
+     * Records a client movement frame that carried no coordinates. The next
+     * position packet may therefore contain multiple vanilla physics steps,
+     * especially when packets are delivered in a short network/server burst.
+     */
+    public void positionless() {
+        positionlessFrames = Math.min(40, positionlessFrames + 1);
+    }
 
     /** Seed the ceiling from a velocity chosen by the server, before the client responds. */
     public void serverVelocity(double horizontalSpeed, double x, double y, double z,
@@ -47,6 +57,7 @@ public final class SustainedSpeedEnvelope {
         // cap too early, especially when it lands on ice.
         previousHorizontalSpeed = horizontalSpeed;
         serverVelocityActive = true;
+        positionlessFrames = 0;
         suspendedUntilNanos = nowNanos + EXTERNAL_MOTION_HOLD_NANOS;
         baseline(x, y, z, nowNanos);
     }
@@ -68,6 +79,8 @@ public final class SustainedSpeedEnvelope {
             reset();
             return Sample.skipped();
         }
+        int skippedFrames = positionlessFrames;
+        positionlessFrames = 0;
         long nowMillis = System.currentTimeMillis();
         boolean fresh = environment != null && nowMillis >= environment.capturedAt()
                 && nowMillis - environment.capturedAt() <= 200;
@@ -87,7 +100,7 @@ public final class SustainedSpeedEnvelope {
             if (initialized && nowNanos >= lastAtNanos
                     && nowNanos - lastAtNanos <= MAX_SAMPLE_GAP_NANOS) {
                 int frames = timing.physicsFrames(
-                        Math.max(1, (nowNanos - lastAtNanos) / 1_000_000L), 0);
+                        Math.max(1, (nowNanos - lastAtNanos) / 1_000_000L), skippedFrames);
                 externalMomentumBound = Math.hypot(nextX - x, nextZ - z) / frames;
             } else externalMomentumBound = 0;
             baseline(nextX, nextY, nextZ, nowNanos);
@@ -96,7 +109,7 @@ public final class SustainedSpeedEnvelope {
         if (nowNanos < suspendedUntilNanos) {
             if (initialized && nowNanos >= lastAtNanos) {
                 int frames = timing.physicsFrames(
-                        Math.max(1, (nowNanos - lastAtNanos) / 1_000_000L), 0);
+                        Math.max(1, (nowNanos - lastAtNanos) / 1_000_000L), skippedFrames);
                 externalMomentumBound = Math.max(externalMomentumBound,
                         Math.hypot(nextX - x, nextZ - z) / frames);
             }
@@ -147,7 +160,7 @@ public final class SustainedSpeedEnvelope {
 
         GroundMotionSequence.Position previous = new GroundMotionSequence.Position(x, y, z);
         long elapsedMillis = Math.max(1, (nowNanos - lastAtNanos) / 1_000_000L);
-        int frames = timing.physicsFrames(elapsedMillis, 0);
+        int frames = timing.physicsFrames(elapsedMillis, skippedFrames);
         double dx = nextX - x, dy = nextY - y, dz = nextZ - z;
         if (collisions != null) {
             dx -= collisions.entityPushX();
@@ -269,6 +282,7 @@ public final class SustainedSpeedEnvelope {
         }
         evidence.reset();
         suspiciousAnchor = null;
+        positionlessFrames = 0;
         baseline(x, y, z, nowNanos);
     }
 
@@ -283,6 +297,7 @@ public final class SustainedSpeedEnvelope {
         previousHorizontalSpeed = 0;
         previousGround = false;
         serverVelocityActive = false;
+        positionlessFrames = 0;
     }
 
     private enum VerticalTransition { NONE, STEP, JUMP }

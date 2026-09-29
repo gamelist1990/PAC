@@ -247,6 +247,8 @@ public final class MotionPredictionCheck extends AbstractCheck implements Packet
                     location.getZ(), environment,
                     collisions, System.nanoTime(),
                     context.externalImpulse() != null);
+            } else if (!context.flying().hasPositionChanged()) {
+                state.speedEnvelope.positionless();
             }
             if (glideSettling) {
                 state.sequence = new GroundMotionSequence();
