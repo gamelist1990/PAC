@@ -434,7 +434,7 @@ class SustainedSpeedEnvelopeTest {
         for (int tick = 1; tick <= 14; tick++) {
             // Approximate ordinary sprint-ground displacement while deliberately
             // skipping the terrain's 0.4 carry multiplier.
-            x += 0.30;
+            x += 0.40;
             var sample = envelope.accept(x, 64, 0,
                     ground(tick, x, 64).withVelocityMultiplier(0.4f), null,
                     BASE_NANOS + tick * 50_000_000L, false);
