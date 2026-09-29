@@ -296,8 +296,12 @@ public final class MotionEnvironment implements Listener {
     public ServerTickTiming serverTiming() { return serverTiming; }
     private final Map<UUID, Integer> pingMillis = new ConcurrentHashMap<>();
     private final Map<UUID, Double> maxStepHeights = new ConcurrentHashMap<>();
+    private final Map<UUID, Double> groundTakeoffVelocities = new ConcurrentHashMap<>();
     public int pingMillis(UUID uuid) { return pingMillis.getOrDefault(uuid, 0); }
     public double maxStepHeight(UUID uuid) { return maxStepHeights.getOrDefault(uuid, 0.6); }
+    public double groundTakeoffVelocity(UUID uuid) {
+        return groundTakeoffVelocities.getOrDefault(uuid, Double.NaN);
+    }
     public GroundStateService.GroundState groundState(UUID uuid) { return ground.state(uuid); }
     private final Map<UUID, ElytraSnapshot> elytraSnapshots = new ConcurrentHashMap<>();
     private final Map<UUID, PowderSnowSnapshot> powderSnowSnapshots = new ConcurrentHashMap<>();
@@ -353,6 +357,7 @@ public final class MotionEnvironment implements Listener {
         snapshots.remove(uuid);
         collisionSnapshots.remove(uuid);
         maxStepHeights.remove(uuid);
+        groundTakeoffVelocities.remove(uuid);
         elytraSnapshots.remove(uuid);
         powderSnowSnapshots.remove(uuid);
         collisionSampleContinuity.remove(uuid);
@@ -432,6 +437,14 @@ public final class MotionEnvironment implements Listener {
                 System.currentTimeMillis());
         Snapshot snapshot = sample(player);
         UUID uuid = player.getUniqueId();
+        GroundStateService.GroundState sampledGround = ground.state(uuid);
+        if (sampledGround != null && sampledGround.known() && sampledGround.onGround()
+                && !sampledGround.entitySupport()) {
+            double takeoffVelocity = sampleGroundTakeoffVelocity(player);
+            if (Double.isFinite(takeoffVelocity) && takeoffVelocity >= 0 && takeoffVelocity <= 32)
+                groundTakeoffVelocities.put(uuid, takeoffVelocity);
+            else groundTakeoffVelocities.remove(uuid);
+        } else groundTakeoffVelocities.remove(uuid);
         Snapshot previous = snapshots.put(uuid, snapshot);
         UUID worldId = player.getWorld().getUID();
         long generation = teleportGeneration.getOrDefault(uuid, 0L);
@@ -891,6 +904,22 @@ public final class MotionEnvironment implements Listener {
             }
         }
         return false;
+    }
+
+    private double sampleGroundTakeoffVelocity(Player player) {
+        var jumpStrength = player.getAttribute(Attribute.JUMP_STRENGTH);
+        if (jumpStrength == null || !Double.isFinite(jumpStrength.getValue())) return Double.NaN;
+        var handle = ((CraftPlayer) player).getHandle();
+        var support = handle.getBlockPosBelowThatAffectsMyMovement();
+        World world = player.getWorld();
+        if (!world.isChunkLoaded(support.getX() >> 4, support.getZ() >> 4)) return Double.NaN;
+        float jumpFactor = ((CraftBlock) world.getBlockAt(
+                support.getX(), support.getY(), support.getZ())).getBlockState().getBlock().getJumpFactor();
+        if (!Float.isFinite(jumpFactor) || jumpFactor < 0 || jumpFactor > 4) return Double.NaN;
+        var jumpBoost = player.getPotionEffect(org.bukkit.potion.PotionEffectType.JUMP_BOOST);
+        int amplifier = jumpBoost == null ? -1 : jumpBoost.getAmplifier();
+        return jumpStrength.getValue() * jumpFactor
+                + (amplifier < 0 ? 0 : 0.1 * (amplifier + 1));
     }
 
     static float effectiveJumpStrength(double attribute, int jumpBoostAmplifier) {
