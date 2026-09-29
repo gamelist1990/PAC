@@ -318,6 +318,18 @@ class GroundMotionSequenceTest {
                 "an upward landing must not arm a second jump at the ledge");
     }
 
+    @Test void specialBounceSurfaceDoesNotBecomeImpossibleTakeoffEvidence() {
+        var sequence = new GroundMotionSequence();
+        var surface = ground(0, 1, 1000).withSpecialVerticalSurface(true);
+        sequence.accept(true, true, 0, 64, 0, 0, surface, 1000);
+
+        var bounced = sequence.accept(true, false, 0, 64.8, 0, 0,
+                ground(0, 2, 1050).withSpecialVerticalSurface(true), 1050);
+
+        assertFalse(bounced.impossibleTakeoff(),
+                "slime/honey vertical response must not be judged by the ordinary jump envelope");
+    }
+
     @Test void normalJumpDoesNotTriggerSpeedHackTakeoff() {
         var sequence = new GroundMotionSequence();
         sequence.accept(true, true, 0, 64, 0, 0, ground(0, 1, 1000), 1000);
