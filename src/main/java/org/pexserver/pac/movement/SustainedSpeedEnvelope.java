@@ -40,7 +40,11 @@ public final class SustainedSpeedEnvelope {
         suspiciousAnchor = null;
         sprintJumpAllowance = 0;
         externalMomentumBound = horizontalSpeed;
-        previousHorizontalSpeed = 0;
+        // A server-selected replacement velocity is also the previous legal
+        // horizontal motion for the next client physics step. Starting carry
+        // from zero makes an AirDash tail collapse toward the ordinary speed
+        // cap too early, especially when it lands on ice.
+        previousHorizontalSpeed = horizontalSpeed;
         suspendedUntilNanos = nowNanos + EXTERNAL_MOTION_HOLD_NANOS;
         baseline(x, y, z, nowNanos);
     }
@@ -144,7 +148,7 @@ public final class SustainedSpeedEnvelope {
         // Normal jump height is still recognizable from the preceding trusted
         // ground sample when collision geometry is temporarily unavailable.
         if (transition == VerticalTransition.NONE && previousGround && frames == 1
-                && dy > 0.03 && Math.abs(dy - environment.jumpStrength()) <= 0.015)
+                && matchesVanillaTakeoff(dy, environment))
             transition = VerticalTransition.JUMP;
         if (transition == VerticalTransition.JUMP && environment.sprinting()) {
             // Takeoff uses ground input acceleration even if the environment
@@ -189,6 +193,22 @@ public final class SustainedSpeedEnvelope {
         GroundMotionSequence.Position rollback = suspiciousAnchor == null ? previous : suspiciousAnchor;
         baseline(nextX, nextY, nextZ, nowNanos);
         return new Sample(true, flagged, speed, legalSpeed, flagged ? rollback : null);
+    }
+
+    /**
+     * Depending on packet/snapshot ordering, the first airborne coordinate can
+     * expose either the raw jump impulse or the first gravity+drag result. Both
+     * are ordinary Vanilla takeoff signatures and carry the +0.2 sprint-jump
+     * horizontal impulse.
+     */
+    private static boolean matchesVanillaTakeoff(double dy, MotionEnvironment.Snapshot environment) {
+        if (dy <= 0.03) return false;
+        double jump = environment.jumpStrength();
+        if (Math.abs(dy - jump) <= 0.02) return true;
+        double afterGravity = AirPredictor.nextDisplacement(jump,
+                environment.gravity(), environment.verticalDrag(),
+                environment.slowFalling(), environment.levitationAmplifier());
+        return Math.abs(dy - afterGravity) <= 0.02;
     }
 
     private static double maximumSustainableSpeed(MotionEnvironment.Snapshot environment) {
