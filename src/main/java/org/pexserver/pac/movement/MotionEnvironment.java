@@ -135,6 +135,14 @@ public final class MotionEnvironment implements Listener {
                     stuckHorizontalMultiplier, stuckVerticalMultiplier, gravityAirborne,
                     factor, specialVerticalSurface);
         }
+        public Snapshot withSpecialVerticalSurface(boolean special) {
+            return new Snapshot(ordinaryGround, ordinaryAir, sprinting, sneaking, usingItem,
+                    yaw, movementSpeed, x, y, z, tick, capturedAt, wallAdjacent, waterSurface, groundFriction,
+                    gravity, horizontalDrag, verticalDrag, jumpStrength, slowFalling,
+                    levitationAmplifier, verticalAir, sneakingSpeed, itemUseMultiplier,
+                    stuckHorizontalMultiplier, stuckVerticalMultiplier, gravityAirborne,
+                    blockSpeedFactor, special);
+        }
         public Snapshot(boolean ordinaryGround, boolean ordinaryAir,
                         boolean sprinting, boolean sneaking, boolean usingItem,
                         float yaw, double movementSpeed,
