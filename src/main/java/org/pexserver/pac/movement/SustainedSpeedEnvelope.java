@@ -29,6 +29,7 @@ public final class SustainedSpeedEnvelope {
     private double externalMomentumBound;
     private double previousHorizontalSpeed;
     private boolean previousGround;
+    private boolean serverVelocityActive;
     private GroundMotionSequence.Position suspiciousAnchor;
 
     /** Seed the ceiling from a velocity chosen by the server, before the client responds. */
@@ -40,9 +41,23 @@ public final class SustainedSpeedEnvelope {
         suspiciousAnchor = null;
         sprintJumpAllowance = 0;
         externalMomentumBound = horizontalSpeed;
-        previousHorizontalSpeed = 0;
+        // A server-selected replacement velocity is also the previous legal
+        // horizontal motion for the next client physics step. Starting carry
+        // from zero makes an AirDash tail collapse toward the ordinary speed
+        // cap too early, especially when it lands on ice.
+        previousHorizontalSpeed = horizontalSpeed;
+        serverVelocityActive = true;
         suspendedUntilNanos = nowNanos + EXTERNAL_MOTION_HOLD_NANOS;
         baseline(x, y, z, nowNanos);
+    }
+
+    /**
+     * The grant lifetime is owned by PacketChecks. Ending it stops the special
+     * uncertain-snapshot hold, but deliberately keeps the already modeled
+     * momentum so ordinary drag/input can carry it forward.
+     */
+    public void endServerVelocity() {
+        serverVelocityActive = false;
     }
 
     public Sample accept(double nextX, double nextY, double nextZ,
@@ -89,6 +104,22 @@ public final class SustainedSpeedEnvelope {
             return Sample.skipped();
         }
         if (!trusted) {
+            // A plugin/server velocity can move the client farther than the
+            // main-thread snapshot's normal near() window before that snapshot
+            // catches up. Do not erase the authoritative launch merely because
+            // this one environment sample cannot yet classify ground vs air.
+            // We also do not learn extra momentum from the untrusted frame.
+            boolean authorizedVelocityGap = serverVelocityActive && initialized
+                    && environment != null && fresh
+                    && nowNanos >= lastAtNanos
+                    && nowNanos - lastAtNanos <= MAX_SAMPLE_GAP_NANOS;
+            if (authorizedVelocityGap) {
+                evidence.reset();
+                suspiciousAnchor = null;
+                baseline(nextX, nextY, nextZ, nowNanos);
+                return Sample.skipped();
+            }
+
             // Ground state can briefly be unknown while a low hop changes the
             // server's ground/air sample. Keep the last trusted anchor across
             // that short gap and judge the aggregate displacement on the next
@@ -144,7 +175,7 @@ public final class SustainedSpeedEnvelope {
         // Normal jump height is still recognizable from the preceding trusted
         // ground sample when collision geometry is temporarily unavailable.
         if (transition == VerticalTransition.NONE && previousGround && frames == 1
-                && dy > 0.03 && Math.abs(dy - environment.jumpStrength()) <= 0.015)
+                && matchesVanillaTakeoff(dy, environment))
             transition = VerticalTransition.JUMP;
         if (transition == VerticalTransition.JUMP && environment.sprinting()) {
             // Takeoff uses ground input acceleration even if the environment
@@ -191,6 +222,22 @@ public final class SustainedSpeedEnvelope {
         return new Sample(true, flagged, speed, legalSpeed, flagged ? rollback : null);
     }
 
+    /**
+     * Depending on packet/snapshot ordering, the first airborne coordinate can
+     * expose either the raw jump impulse or the first gravity+drag result. Both
+     * are ordinary Vanilla takeoff signatures and carry the +0.2 sprint-jump
+     * horizontal impulse.
+     */
+    private static boolean matchesVanillaTakeoff(double dy, MotionEnvironment.Snapshot environment) {
+        if (dy <= 0.03) return false;
+        double jump = environment.jumpStrength();
+        if (Math.abs(dy - jump) <= 0.02) return true;
+        double afterGravity = AirPredictor.nextDisplacement(jump,
+                environment.gravity(), environment.verticalDrag(),
+                environment.slowFalling(), environment.levitationAmplifier());
+        return Math.abs(dy - afterGravity) <= 0.02;
+    }
+
     private static double maximumSustainableSpeed(MotionEnvironment.Snapshot environment) {
         MotionPredictor.Motion zero = new MotionPredictor.Motion(0, 0, 0);
         float groundFriction = environment.ordinaryGround() ? environment.groundFriction() : 0.6f;
@@ -235,6 +282,7 @@ public final class SustainedSpeedEnvelope {
         externalMomentumBound = 0;
         previousHorizontalSpeed = 0;
         previousGround = false;
+        serverVelocityActive = false;
     }
 
     private enum VerticalTransition { NONE, STEP, JUMP }
