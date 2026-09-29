@@ -2,6 +2,7 @@ package org.pexserver.pac.check.shared;
 
 import org.bukkit.Bukkit;
 import org.bukkit.FluidCollisionMode;
+import org.bukkit.attribute.Attribute;
 import org.bukkit.GameMode;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
@@ -45,6 +46,9 @@ public final class KillAuraCheck extends AbstractCheck implements PacketCheck, E
     private static final class CombatState {
         MxAimSuite javaAim = new MxAimSuite();
         final CombatPatternMonitor combatPatterns = new CombatPatternMonitor();
+        final AttackRotationSequence attackRotations = new AttackRotationSequence();
+        final CombatEvidenceSequence viewMisses = new CombatEvidenceSequence(2, 20);
+        final CombatEvidenceSequence wallHits = new CombatEvidenceSequence(2, 20);
         long analysisGeneration;
         long lastAttack;
         long aimConfirmedUntil;
@@ -53,15 +57,23 @@ public final class KillAuraCheck extends AbstractCheck implements PacketCheck, E
         float latestPitch;
         long latestLookAt;
         boolean hasLatestLook;
+        String bedrockInputMode = "UNKNOWN";
         PendingAttack pendingAttack;
+
+        void resetStrictEvidence() {
+            pendingAttack = null;
+            rearAttacks.reset();
+            viewMisses.reset();
+            wallHits.reset();
+            attackRotations.reset();
+            combatPatterns.reset();
+        }
 
         void resetAnalysis() {
             analysisGeneration++;
             lastAttack = 0L;
             aimConfirmedUntil = 0L;
-            pendingAttack = null;
-            rearAttacks.reset();
-            combatPatterns.reset();
+            resetStrictEvidence();
             javaAim = new MxAimSuite();
             if (hasLatestLook) javaAim.initialize(latestYaw, latestPitch);
         }
