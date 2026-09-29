@@ -1,18 +1,19 @@
 package org.pexserver.pac.movement;
 
 /**
- * Correlates packet Y movement with server-authoritative special-surface
- * vertical motion. Minecraft 26.2 moved slime/bed bounce into generalized
- * collision restitution; this window deliberately consumes the server's own
- * velocity result instead of re-implementing an approximate pre-26.2 formula.
+ * Correlates packet Y movement with server-authoritative special-surface state.
+ * Minecraft 26.2 moved slime/bed bounce into generalized collision restitution,
+ * so this models the observed landing transition rather than an obsolete fixed
+ * slime multiplier.
  */
 public final class VerticalSurfaceMotionWindow {
-    private static final long MAX_SAMPLE_AGE_MILLIS = 200L;
-    private static final double MIN_BOUNCE_SERVER_VELOCITY = 0.12;
-    private static final double BOUNCE_MIN_RATIO = 0.35;
-    private static final double BOUNCE_ABSOLUTE_SLACK = 0.08;
+    private static final long MAX_SNAPSHOT_AGE_MILLIS = 200L;
+    private static final long MAX_TRANSITION_MILLIS = 250L;
+    private static final double MIN_FALL_FOR_BOUNCE = 0.18;
     private static final double JUMP_SLACK = 0.09;
-    private static final int REQUIRED_SUPPRESSED_BOUNCE_FRAMES = 2;
+    private static final double BOUNCE_MIN_RATIO = 0.25;
+    private static final double BOUNCE_SLACK = 0.04;
+    private static final int REQUIRED_EVENTS = 2;
 
     public enum Anomaly {
         NONE,
@@ -20,50 +21,45 @@ public final class VerticalSurfaceMotionWindow {
         EXCESS_SPECIAL_SURFACE_JUMP
     }
 
-    public record Surface(double x, double y, double z,
-                          boolean onGround, boolean sneaking,
-                          float bounceRestitution, float jumpFactor,
-                          double legalJumpPower, double serverVelocityY,
-                          long capturedAt) {
-        public boolean fresh(long now) {
-            return now >= capturedAt && now - capturedAt <= MAX_SAMPLE_AGE_MILLIS;
-        }
-
-        public boolean special() {
-            return bounceRestitution > 0.0f || Math.abs(jumpFactor - 1.0f) > 1.0e-6;
-        }
-
-        public boolean near(double px, double py, double pz) {
-            return Math.abs(x - px) <= 0.55
-                    && Math.abs(y - py) <= 0.65
-                    && Math.abs(z - pz) <= 0.55;
-        }
-    }
-
     public record Finding(Anomaly anomaly, double dy, double expected,
-                          float restitution, float jumpFactor, int streak) {
+                          float restitution, int streak) {
         static Finding none() {
-            return new Finding(Anomaly.NONE, 0, 0, 0, 1, 0);
+            return new Finding(Anomaly.NONE, 0, 0, 0, 0);
         }
     }
 
     private boolean initialized;
     private double y;
+    private double lastDy;
     private long lastAt;
-    private int suppressedBounceFrames;
-    private long bounceObservedAt;
+
+    private boolean groundArmed;
+    private double armedJumpPower;
+    private float armedRestitution;
+    private long groundArmedAt;
+
+    private boolean bounceExpected;
+    private double expectedBounce;
+    private float expectedRestitution;
+    private long bounceDeadline;
+
+    private int suppressedBounceEvents;
+    private int excessJumpEvents;
 
     public Finding accept(boolean hasPosition, double x, double nextY, double z,
-                          Surface surface, long now, boolean invalidated) {
-        if (invalidated || surface == null || !surface.fresh(now) || !surface.special()
+                          MotionEnvironment.Snapshot environment, long now,
+                          boolean invalidated) {
+        if (invalidated || environment == null || now < environment.capturedAt()
+                || now - environment.capturedAt() > MAX_SNAPSHOT_AGE_MILLIS
                 || !Double.isFinite(nextY)) {
             reset();
-            if (hasPosition) seed(nextY, now);
+            if (hasPosition && Double.isFinite(nextY)) seed(nextY, now);
             return Finding.none();
         }
         if (!hasPosition) return Finding.none();
-        if (!initialized || now < lastAt || now - lastAt > 250) {
+        if (!initialized || now < lastAt || now - lastAt > MAX_TRANSITION_MILLIS) {
             seed(nextY, now);
+            rememberGround(environment, now);
             return Finding.none();
         }
 
@@ -71,60 +67,100 @@ public final class VerticalSurfaceMotionWindow {
         y = nextY;
         lastAt = now;
 
-        // Manual jump from a settled special surface. Honey's jumpFactor=0.5,
-        // while slime/bed keep 1.0. A legitimate restitution bounce is excluded
-        // because the server already has a positive bounce velocity in that case.
-        boolean settledGround = surface.onGround()
-                && surface.serverVelocityY() <= MIN_BOUNCE_SERVER_VELOCITY
-                && surface.near(x, nextY - dy, z);
-        if (settledGround && dy > Math.max(0.08, surface.legalJumpPower() + JUMP_SLACK)) {
-            suppressedBounceFrames = 0;
-            return new Finding(Anomaly.EXCESS_SPECIAL_SURFACE_JUMP,
-                    dy, surface.legalJumpPower(), surface.bounceRestitution(),
-                    surface.jumpFactor(), 1);
-        }
-
-        // The server's own entity simulation has already produced a positive
-        // restitution velocity. AntiBounce suppresses exactly that client-side.
-        if (!surface.sneaking()
-                && surface.bounceRestitution() > 0.0f
-                && surface.serverVelocityY() >= MIN_BOUNCE_SERVER_VELOCITY) {
-            if (bounceObservedAt == 0 || now - bounceObservedAt > 250) {
-                bounceObservedAt = now;
-                suppressedBounceFrames = 0;
-            }
-            double minimumExpected = Math.max(0.04,
-                    surface.serverVelocityY() * BOUNCE_MIN_RATIO - BOUNCE_ABSOLUTE_SLACK);
-            if (dy < minimumExpected) {
-                suppressedBounceFrames++;
-                if (suppressedBounceFrames >= REQUIRED_SUPPRESSED_BOUNCE_FRAMES) {
-                    int streak = suppressedBounceFrames;
-                    reset();
-                    return new Finding(Anomaly.BOUNCE_SUPPRESSION, dy,
-                            surface.serverVelocityY(), surface.bounceRestitution(),
-                            surface.jumpFactor(), streak);
+        if (bounceExpected) {
+            if (now <= bounceDeadline) {
+                double minimum = Math.max(0.035,
+                        expectedBounce * BOUNCE_MIN_RATIO - BOUNCE_SLACK);
+                if (dy < minimum) {
+                    suppressedBounceEvents++;
+                    bounceExpected = false;
+                    if (suppressedBounceEvents >= REQUIRED_EVENTS) {
+                        int streak = suppressedBounceEvents;
+                        clearTransient();
+                        lastDy = dy;
+                        return new Finding(Anomaly.BOUNCE_SUPPRESSION, dy,
+                                expectedBounce, expectedRestitution, streak);
+                    }
+                } else {
+                    suppressedBounceEvents = Math.max(0, suppressedBounceEvents - 1);
+                    bounceExpected = false;
                 }
             } else {
-                suppressedBounceFrames = Math.max(0, suppressedBounceFrames - 1);
+                bounceExpected = false;
             }
-        } else if (bounceObservedAt != 0 && now - bounceObservedAt > 250) {
-            suppressedBounceFrames = 0;
-            bounceObservedAt = 0;
         }
 
+        if (groundArmed && now - groundArmedAt <= MAX_TRANSITION_MILLIS
+                && dy > armedJumpPower + JUMP_SLACK) {
+            excessJumpEvents++;
+            groundArmed = false;
+            if (excessJumpEvents >= REQUIRED_EVENTS) {
+                int streak = excessJumpEvents;
+                clearTransient();
+                lastDy = dy;
+                return new Finding(Anomaly.EXCESS_SPECIAL_SURFACE_JUMP,
+                        dy, armedJumpPower, armedRestitution, streak);
+            }
+        } else if (dy > 0.035) {
+            groundArmed = false;
+        }
+
+        // A downward frame followed by a server-confirmed landing on a
+        // restitution surface must produce a positive next movement unless the
+        // player is intentionally suppressing bounce (sneaking).
+        if (environment.ordinaryGround() && environment.specialVerticalSurface()
+                && environment.bounceRestitution() > 0.0f
+                && !environment.sneaking() && lastDy < -MIN_FALL_FOR_BOUNCE
+                && environment.near(x, nextY, z)) {
+            expectedBounce = Math.max(0.0,
+                    (-lastDy - environment.gravity()) * environment.bounceRestitution());
+            if (expectedBounce >= 0.08) {
+                expectedRestitution = environment.bounceRestitution();
+                bounceExpected = true;
+                bounceDeadline = now + MAX_TRANSITION_MILLIS;
+            }
+        }
+
+        rememberGround(environment, now);
+        lastDy = dy;
         return Finding.none();
+    }
+
+    private void rememberGround(MotionEnvironment.Snapshot environment, long now) {
+        if (environment.ordinaryGround() && environment.specialVerticalSurface()
+                && Float.isFinite(environment.surfaceJumpStrength())
+                && environment.surfaceJumpStrength() >= 0
+                && environment.near(environment.x(), environment.y(), environment.z())) {
+            groundArmed = true;
+            armedJumpPower = environment.surfaceJumpStrength();
+            armedRestitution = environment.bounceRestitution();
+            groundArmedAt = now;
+        }
     }
 
     public void reset() {
         initialized = false;
+        y = 0;
+        lastDy = 0;
         lastAt = 0;
-        suppressedBounceFrames = 0;
-        bounceObservedAt = 0;
+        suppressedBounceEvents = 0;
+        excessJumpEvents = 0;
+        clearTransient();
+    }
+
+    private void clearTransient() {
+        groundArmed = false;
+        bounceExpected = false;
+        groundArmedAt = 0;
+        bounceDeadline = 0;
+        expectedBounce = 0;
+        expectedRestitution = 0;
     }
 
     private void seed(double y, long now) {
         this.y = y;
         this.lastAt = now;
+        this.lastDy = 0;
         this.initialized = true;
     }
 }
