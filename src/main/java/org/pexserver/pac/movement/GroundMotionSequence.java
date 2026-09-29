@@ -13,9 +13,20 @@ public final class GroundMotionSequence {
     public void timing(ServerTickTiming.Snapshot timing) { this.timing = timing; }
 
     private static final double COLLISION_MATCH_EPSILON = 0.005;
+    public enum SurfaceVerticalAnomaly { NONE, BOUNCE_SUPPRESSED, BOUNCE_EXCESS }
+
     public record Sample(boolean evaluated, double offset, boolean abrupt,
                          double horizontalDistance, double verticalDistance, boolean externalImpulseMismatch,
-                         boolean impossibleTakeoff, double speedExcess, int skippedFrames) { }
+                         boolean impossibleTakeoff, double speedExcess, int skippedFrames,
+                         SurfaceVerticalAnomaly surfaceVerticalAnomaly) {
+        public Sample(boolean evaluated, double offset, boolean abrupt,
+                      double horizontalDistance, double verticalDistance, boolean externalImpulseMismatch,
+                      boolean impossibleTakeoff, double speedExcess, int skippedFrames) {
+            this(evaluated, offset, abrupt, horizontalDistance, verticalDistance,
+                    externalImpulseMismatch, impossibleTakeoff, speedExcess, skippedFrames,
+                    SurfaceVerticalAnomaly.NONE);
+        }
+    }
     public record Position(double x, double y, double z) { }
 
     private double x, y, z;
@@ -40,6 +51,8 @@ public final class GroundMotionSequence {
     private float takeoffJumpStrength;
     private long takeoffArmedAt;
     private long lastCombatImpulseAt;
+    private double expectedBounceDy = Double.NaN;
+    private long expectedBounceAt;
 
     public Position lastPosition() { return initialized ? new Position(x, y, z) : null; }
     public MotionPredictor.Motion motion() { return previousMotion; }
@@ -61,6 +74,8 @@ public final class GroundMotionSequence {
         takeoffY = y;
         takeoffArmedAt = 0;
         lastCombatImpulseAt = 0;
+        expectedBounceDy = Double.NaN;
+        expectedBounceAt = 0;
         if (environment != null) {
             packetYawKnown = Float.isFinite(environment.yaw());
             yaw = environment.yaw();
@@ -76,7 +91,7 @@ public final class GroundMotionSequence {
             stuckVerticalMultiplier = environment.stuckVerticalMultiplier();
             blockSpeedFactor = environment.blockSpeedFactor();
             specialVerticalSurface = environment.specialVerticalSurface();
-            takeoffJumpStrength = environment.jumpStrength();
+            takeoffJumpStrength = environment.surfaceJumpStrength();
         }
     }
 
@@ -136,6 +151,8 @@ public final class GroundMotionSequence {
             initialized = false;
             reliable = false;
             takeoffArmed = false;
+            expectedBounceDy = Double.NaN;
+            expectedBounceAt = 0;
             lastFrameAt = 0;
             positionlessFrames = 0;
             positionlessInputs.clear();
@@ -151,10 +168,29 @@ public final class GroundMotionSequence {
         double dx = nextX - x;
         double dy = nextY - y;
         double dz = nextZ - z;
+        MotionPredictor.Motion actual = new MotionPredictor.Motion(dx, dy, dz);
         double startX = x, startY = y, startZ = z;
         double horizontal = Math.hypot(dx, dz);
         boolean externalTransition = externalMotion.rebase(impulse);
         boolean uncertainCollision = collisionGeometryUncertain && impulse == null && !externalTransition;
+        SurfaceVerticalAnomaly surfaceVerticalAnomaly = SurfaceVerticalAnomaly.NONE;
+        if (Double.isFinite(expectedBounceDy)) {
+            long bounceAge = now - expectedBounceAt;
+            if (externalTransition || skippedFrames > 0 || physicsFrames != 1
+                    || bounceAge < 0 || bounceAge > 180) {
+                expectedBounceDy = Double.NaN;
+                expectedBounceAt = 0;
+            } else {
+                double lowerTolerance = Math.max(0.06, Math.abs(expectedBounceDy) * 0.25);
+                double upperTolerance = Math.max(0.10, Math.abs(expectedBounceDy) * 0.35);
+                if (dy < expectedBounceDy - lowerTolerance)
+                    surfaceVerticalAnomaly = SurfaceVerticalAnomaly.BOUNCE_SUPPRESSED;
+                else if (dy > expectedBounceDy + upperTolerance)
+                    surfaceVerticalAnomaly = SurfaceVerticalAnomaly.BOUNCE_EXCESS;
+                expectedBounceDy = Double.NaN;
+                expectedBounceAt = 0;
+            }
+        }
         List<MultiStepMotionPredictor.Frame> inputFrames = null;
         if (externalTransition || physicsFrames > 1 || skippedFrames > 0) {
             inputFrames = new ArrayList<>(positionlessInputs);
@@ -164,6 +200,8 @@ public final class GroundMotionSequence {
         }
         positionlessInputs.clear();
         if (externalTransition) {
+            expectedBounceDy = Double.NaN;
+            expectedBounceAt = 0;
             previousMotion = externalMotion.seed(previousMotion, impulse);
             if (impulse != null && impulse.combatKnockback()) {
                 lastCombatImpulseAt = now;
@@ -173,6 +211,17 @@ public final class GroundMotionSequence {
                 if (collisions != null) previousMotion = new MotionPredictor.Motion(
                                 previousMotion.dx() + collisions.entityPushX(), previousMotion.dy(),
                                 previousMotion.dz() + collisions.entityPushZ());
+        if (surfaceVerticalAnomaly != SurfaceVerticalAnomaly.NONE) {
+            x = nextX; y = nextY; z = nextZ;
+            lastFrameAt = now;
+            lastSnapshotTick = environment == null ? -1 : environment.tick();
+            initialized = true;
+            reliable = false;
+            takeoffArmed = false;
+            previousMotion = actual;
+            return new Sample(false, 0, false, horizontal, dy, false,
+                    false, 0, skippedFrames, surfaceVerticalAnomaly);
+        }
         int tick = environment == null ? -1 : environment.tick();
         boolean continuous = skippedFrames == 0 && physicsFrames == 1
                 && lastFrameAt > 0 && now - lastFrameAt < 250
@@ -209,21 +258,39 @@ public final class GroundMotionSequence {
         // already changed to air. Disarm after the first upward physics frame.
         boolean combatImpulseSettling = lastCombatImpulseAt > 0 && now >= lastCombatImpulseAt
                 && now - lastCombatImpulseAt < 500;
+        boolean bounceArmedThisFrame = false;
+        if (!externalTransition && !combatImpulseSettling && skippedFrames == 0
+                && physicsFrames == 1 && environment != null && environment.ordinaryGround()
+                && environment.levitationAmplifier() < 0 && !environment.sneaking()
+                && Float.isFinite(environment.bounceRestitution())
+                && SurfaceBouncePredictor.shouldBounce(previousMotion.dy(), environment.gravity(),
+                        environment.slowFalling(), environment.bounceRestitution(), false)
+                && dy <= 0.03 && dy >= previousMotion.dy() - 0.02) {
+            double expected = SurfaceBouncePredictor.nextDisplacementAfterBounce(
+                    previousMotion.dy(), dy, environment.gravity(), environment.verticalDrag(),
+                    environment.slowFalling(), environment.bounceRestitution());
+            if (Double.isFinite(expected) && expected > 0.03) {
+                expectedBounceDy = expected;
+                expectedBounceAt = now;
+                bounceArmedThisFrame = true;
+                takeoffArmed = false;
+            }
+        }
         // A missing collision snapshot uses the legacy jump envelope. When a
         // snapshot exists, only fresh and complete geometry may constrain it.
         boolean verifiedCollisionGeometry = collisions == null || collisions.complete()
                 && collisions.blockGeometryComplete() && now >= collisions.capturedAt()
                 && now - collisions.capturedAt() <= 200;
         boolean takeoffFrame = !externalTransition && !combatImpulseSettling
-                && !specialVerticalSurface
-                && environment != null && !environment.specialVerticalSurface()
+                && !bounceArmedThisFrame
+                && environment != null && Float.isFinite(environment.surfaceJumpStrength())
                 && verifiedCollisionGeometry
                 && (collisions == null || !collisions.hardEntityCollisionPossible())
                 && skippedFrames == 0 && takeoffArmed
                 && environment.levitationAmplifier() < 0 && initialized
                 && physicsFrames == 1 && lastFrameAt > 0 && now - lastFrameAt < 250
                 && now - takeoffArmedAt < 250 && Math.abs(y - takeoffY) < 0.03
-                && takeoffJumpStrength == environment.jumpStrength()
+                && Float.compare(takeoffJumpStrength, environment.surfaceJumpStrength()) == 0
                 && horizontal < 1.2 && dy > 0.035;
         double stepHeight = collisions == null ? 0.6 : Math.max(0, collisions.maxStep());
         boolean changedBlockCanExplainStep = uncertainCollision
@@ -253,10 +320,7 @@ public final class GroundMotionSequence {
                 && stuckVerticalMultiplier == environment.stuckVerticalMultiplier()
                 && blockSpeedFactor == environment.blockSpeedFactor()
                 && specialVerticalSurface == environment.specialVerticalSurface()
-                // Jump strength belongs to the ordinary takeoff baseline. On
-                // honey/slime we deliberately do not arm that vertical model,
-                // so it must not prevent the independent horizontal model from stabilizing.
-                && (specialVerticalSurface || takeoffJumpStrength == environment.jumpStrength())
+                && Float.compare(takeoffJumpStrength, environment.surfaceJumpStrength()) == 0
                 && Math.abs(movementSpeed - environment.movementSpeed()) < 1.0E-6;
         boolean sameGroundModel = sameGroundConditions && Math.abs(dy) <= 0.03;
         boolean smallCollisionStep = sameGroundConditions && Math.abs(dy) > 0.03 && Math.abs(dy) <= 0.12501
@@ -306,24 +370,25 @@ public final class GroundMotionSequence {
             stuckVerticalMultiplier = environment.stuckVerticalMultiplier();
             blockSpeedFactor = environment.blockSpeedFactor();
             specialVerticalSurface = environment.specialVerticalSurface();
+            takeoffJumpStrength = environment.surfaceJumpStrength();
         }
         // The server can already report on-ground on the final *upward* frame
         // of a jump onto a higher block. That frame is a landing, not a new
         // grounded takeoff baseline. Arming here makes the next small Y delta
         // look like an impossible jump (especially beside a wall).
-        if (ordinary && !specialVerticalSurface && !combatImpulseSettling
+        if (ordinary && !bounceArmedThisFrame && !combatImpulseSettling
+                && Float.isFinite(environment.surfaceJumpStrength())
                 && (firstPosition || dy <= 0.03)
                 && environment.near(nextX, nextY, nextZ)
                 && Math.abs(nextY - environment.y()) < 0.03) {
             takeoffArmed = true;
             takeoffY = nextY;
-            takeoffJumpStrength = environment.jumpStrength();
+            takeoffJumpStrength = environment.surfaceJumpStrength();
             takeoffArmedAt = now;
         } else if (environment == null || dy > 0.035 || Math.abs(nextY - takeoffY) > 0.03
                 || now - takeoffArmedAt >= 250) {
             takeoffArmed = false;
         }
-        MotionPredictor.Motion actual = new MotionPredictor.Motion(dx, dy, dz);
         if (externalTransition) {
             List<MultiStepMotionPredictor.Frame> responseFrame =
                     MultiStepMotionPredictor.lastFrames(inputFrames, 1);
