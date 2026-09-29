@@ -67,7 +67,29 @@ public final class MotionEnvironment implements Listener {
                            int levitationAmplifier, boolean verticalAir,
                            float sneakingSpeed, float itemUseMultiplier,
                            float stuckHorizontalMultiplier, float stuckVerticalMultiplier,
-                           boolean gravityAirborne) {
+                           boolean gravityAirborne, float blockSpeedFactor) {
+        public Snapshot(boolean ordinaryGround, boolean ordinaryAir,
+                        boolean sprinting, boolean sneaking, boolean usingItem,
+                        float yaw, double movementSpeed,
+                        double x, double y, double z,
+                        int tick, long capturedAt,
+                        boolean wallAdjacent, boolean waterSurface,
+                        float groundFriction,
+                        double gravity, float horizontalDrag, float verticalDrag,
+                        float jumpStrength, boolean slowFalling,
+                        int levitationAmplifier, boolean verticalAir,
+                        float sneakingSpeed, float itemUseMultiplier,
+                        float stuckHorizontalMultiplier, float stuckVerticalMultiplier,
+                        boolean gravityAirborne) {
+            this(ordinaryGround, ordinaryAir, sprinting, sneaking, usingItem,
+                    yaw, movementSpeed, x, y, z, tick, capturedAt,
+                    wallAdjacent, waterSurface, groundFriction,
+                    gravity, horizontalDrag, verticalDrag, jumpStrength,
+                    slowFalling, levitationAmplifier, verticalAir,
+                    sneakingSpeed, itemUseMultiplier,
+                    stuckHorizontalMultiplier, stuckVerticalMultiplier,
+                    gravityAirborne, 1.0f);
+        }
         public Snapshot(boolean ordinaryGround, boolean ordinaryAir,
                         boolean sprinting, boolean sneaking, boolean usingItem,
                         float yaw, double movementSpeed,
@@ -93,14 +115,14 @@ public final class MotionEnvironment implements Listener {
                     yaw, speed, x, y, z, tick, capturedAt, wallAdjacent, waterSurface, groundFriction,
                     gravity, horizontalDrag, verticalDrag, jumpStrength, slowFalling,
                     levitationAmplifier, verticalAir, sneakingSpeed, itemUseMultiplier,
-                    stuckHorizontalMultiplier, stuckVerticalMultiplier, gravityAirborne);
+                    stuckHorizontalMultiplier, stuckVerticalMultiplier, gravityAirborne, blockSpeedFactor);
         }
                 public Snapshot withSprinting(boolean sprinting, double speed) {
                     return new Snapshot(ordinaryGround, ordinaryAir, sprinting, sneaking, usingItem,
                         yaw, speed, x, y, z, tick, capturedAt, wallAdjacent, waterSurface, groundFriction,
                         gravity, horizontalDrag, verticalDrag, jumpStrength, slowFalling,
                         levitationAmplifier, verticalAir, sneakingSpeed, itemUseMultiplier,
-                        stuckHorizontalMultiplier, stuckVerticalMultiplier, gravityAirborne);
+                        stuckHorizontalMultiplier, stuckVerticalMultiplier, gravityAirborne, blockSpeedFactor);
                 }
         public Snapshot(boolean ordinaryGround, boolean ordinaryAir,
                         boolean sprinting, boolean sneaking, boolean usingItem,
@@ -778,7 +800,8 @@ public final class MotionEnvironment implements Listener {
                 || Math.abs(previous.sneakingSpeed() - current.sneakingSpeed()) > 1.0e-6
                 || Math.abs(previous.itemUseMultiplier() - current.itemUseMultiplier()) > 1.0e-6
                 || Math.abs(previous.stuckHorizontalMultiplier() - current.stuckHorizontalMultiplier()) > 1.0e-6
-                || Math.abs(previous.stuckVerticalMultiplier() - current.stuckVerticalMultiplier()) > 1.0e-6;
+                || Math.abs(previous.stuckVerticalMultiplier() - current.stuckVerticalMultiplier()) > 1.0e-6
+                || Math.abs(previous.blockSpeedFactor() - current.blockSpeedFactor()) > 1.0e-6;
     }
 
     private Snapshot sample(Player player) {
@@ -834,6 +857,7 @@ public final class MotionEnvironment implements Listener {
                 && Double.isFinite(movementSpeed.getValue())
                 && movementSpeed.getValue() >= 0 && movementSpeed.getValue() <= 1024;
         Location location = player.getLocation();
+        float blockSpeedFactor = effectiveBlockSpeedFactor(player);
         double frictionValue = frictionModifier == null ? Double.NaN : frictionModifier.getValue();
         float groundFriction = supported && usableGroundSpeed && knownGround && state.onGround()
                 ? groundFriction(player, frictionValue, state.supportY()) : Float.NaN;
@@ -880,7 +904,33 @@ public final class MotionEnvironment implements Listener {
                 player.hasPotionEffect(org.bukkit.potion.PotionEffectType.SLOW_FALLING),
                 levitationAmplifier, verticalAir,
                 Double.isFinite(sneakValue) ? (float) sneakValue : 0.3f, useMultiplier,
-                stuckHorizontalMultiplier, stuckVerticalMultiplier, gravityAirborne);
+                stuckHorizontalMultiplier, stuckVerticalMultiplier, gravityAirborne,
+                blockSpeedFactor);
+    }
+
+    private float effectiveBlockSpeedFactor(Player player) {
+        var efficiency = player.getAttribute(Attribute.MOVEMENT_EFFICIENCY);
+        double efficiencyValue = efficiency == null ? 0.0 : efficiency.getValue();
+        if (!Double.isFinite(efficiencyValue)) return 1.0f;
+        efficiencyValue = Math.max(0.0, Math.min(1.0, efficiencyValue));
+
+        Location location = player.getLocation();
+        World world = location.getWorld();
+        Block feet = location.getBlock();
+        var feetBlock = ((CraftBlock) feet).getBlockState().getBlock();
+        float factor = feetBlock.getSpeedFactor();
+        if (!Float.isFinite(factor)) return 1.0f;
+
+        if (factor == 1.0f) {
+            BlockPos support = ((CraftPlayer) player).getHandle().getBlockPosBelowThatAffectsMyMovement();
+            if (!world.isChunkLoaded(support.getX() >> 4, support.getZ() >> 4)) return 1.0f;
+            factor = ((CraftBlock) world.getBlockAt(support.getX(), support.getY(), support.getZ()))
+                    .getBlockState().getBlock().getSpeedFactor();
+        }
+        if (!Float.isFinite(factor) || factor < 0 || factor > 4) return 1.0f;
+        // LivingEntity#getBlockSpeedFactor lerps the raw block factor toward
+        // 1.0 using the server-authoritative MOVEMENT_EFFICIENCY attribute.
+        return (float) (factor + efficiencyValue * (1.0 - factor));
     }
 
     private boolean insideCobweb(Player player) {
@@ -1062,7 +1112,9 @@ public final class MotionEnvironment implements Listener {
                 if (!fullBlockCollision) return Float.NaN;
                 var nmsBlock = ((CraftBlock) floor).getBlockState().getBlock();
                 // Speed and bounce factors change motion outside the simple ground recurrence.
-                if (nmsBlock.getSpeedFactor() != 1.0f || nmsBlock.getBounceRestitution() != 0.0f
+                float speedFactor = nmsBlock.getSpeedFactor();
+                if (!Float.isFinite(speedFactor) || speedFactor < 0 || speedFactor > 4
+                        || nmsBlock.getBounceRestitution() != 0.0f
                         || nmsBlock.getJumpFactor() != 1.0f)
                     return Float.NaN;
                 float blockFriction = modifiedFriction(nmsBlock.getFriction(), modifier);
@@ -1089,7 +1141,8 @@ public final class MotionEnvironment implements Listener {
         float blockSpeed = nmsBlock.getSpeedFactor();
         float friction = modifiedFriction(nmsBlock.getFriction(), modifier);
         if (nmsBlock.getBounceRestitution() != 0.0f || nmsBlock.getJumpFactor() != 1.0f
-                || !Float.isFinite(blockSpeed) || blockSpeed != 1.0f || !Float.isFinite(friction))
+                || !Float.isFinite(blockSpeed) || blockSpeed < 0 || blockSpeed > 4
+                || !Float.isFinite(friction))
             return Float.NaN;
 
         BoundingBox body = player.getBoundingBox();
