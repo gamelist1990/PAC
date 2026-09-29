@@ -14,7 +14,7 @@ killaura:
   # MX's default keeps its cinematic-sensitive modules active unless explicitly ignored.
   ignore-cinematic: false
 detectors:
-  # Standard detectors start enabled and eligible for automatic BAN; experimental xray/noclip start disabled.
+  # Standard detectors start enabled. Xray remains opt-in; noclip prevention is enabled but does not auto-BAN by default.
   # Set ban-enabled: false on an individual detector to disable its automatic BAN.
   # Each detector also accepts kick-enabled: false and kick-score-threshold: 10.
   # Enable kicks per detector from /pac ui; bedrock-prediction does not auto-kick.
@@ -164,9 +164,10 @@ detectors:
     suspicion-threshold: 18
     rare-jump-distance: 10
   noclip:
-    # Experimental swept-AABB wall-phase check; enable manually from /pac ui.
-    enabled: false
-    ban-enabled: true
+    # Swept-AABB prevention for Phase/Clip. Movement is blocked immediately,
+    # while automatic bans remain disabled until enough production evidence is collected.
+    enabled: true
+    ban-enabled: false
     cancel: true
     alert-score-threshold: 1
     kick-enabled: false
