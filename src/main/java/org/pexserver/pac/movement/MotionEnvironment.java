@@ -67,7 +67,8 @@ public final class MotionEnvironment implements Listener {
                            int levitationAmplifier, boolean verticalAir,
                            float sneakingSpeed, float itemUseMultiplier,
                            float stuckHorizontalMultiplier, float stuckVerticalMultiplier,
-                           boolean gravityAirborne, float blockSpeedFactor) {
+                           boolean gravityAirborne, float blockSpeedFactor,
+                           boolean specialVerticalSurface) {
         public Snapshot(boolean ordinaryGround, boolean ordinaryAir,
                         boolean sprinting, boolean sneaking, boolean usingItem,
                         float yaw, double movementSpeed,
@@ -88,7 +89,7 @@ public final class MotionEnvironment implements Listener {
                     slowFalling, levitationAmplifier, verticalAir,
                     sneakingSpeed, itemUseMultiplier,
                     stuckHorizontalMultiplier, stuckVerticalMultiplier,
-                    gravityAirborne, 1.0f);
+                    gravityAirborne, 1.0f, false);
         }
         public Snapshot(boolean ordinaryGround, boolean ordinaryAir,
                         boolean sprinting, boolean sneaking, boolean usingItem,
@@ -115,21 +116,24 @@ public final class MotionEnvironment implements Listener {
                     yaw, speed, x, y, z, tick, capturedAt, wallAdjacent, waterSurface, groundFriction,
                     gravity, horizontalDrag, verticalDrag, jumpStrength, slowFalling,
                     levitationAmplifier, verticalAir, sneakingSpeed, itemUseMultiplier,
-                    stuckHorizontalMultiplier, stuckVerticalMultiplier, gravityAirborne, blockSpeedFactor);
+                    stuckHorizontalMultiplier, stuckVerticalMultiplier, gravityAirborne,
+                    blockSpeedFactor, specialVerticalSurface);
         }
                 public Snapshot withSprinting(boolean sprinting, double speed) {
                     return new Snapshot(ordinaryGround, ordinaryAir, sprinting, sneaking, usingItem,
                         yaw, speed, x, y, z, tick, capturedAt, wallAdjacent, waterSurface, groundFriction,
                         gravity, horizontalDrag, verticalDrag, jumpStrength, slowFalling,
                         levitationAmplifier, verticalAir, sneakingSpeed, itemUseMultiplier,
-                        stuckHorizontalMultiplier, stuckVerticalMultiplier, gravityAirborne, blockSpeedFactor);
+                        stuckHorizontalMultiplier, stuckVerticalMultiplier, gravityAirborne,
+                        blockSpeedFactor, specialVerticalSurface);
                 }
         public Snapshot withBlockSpeedFactor(float factor) {
             return new Snapshot(ordinaryGround, ordinaryAir, sprinting, sneaking, usingItem,
                     yaw, movementSpeed, x, y, z, tick, capturedAt, wallAdjacent, waterSurface, groundFriction,
                     gravity, horizontalDrag, verticalDrag, jumpStrength, slowFalling,
                     levitationAmplifier, verticalAir, sneakingSpeed, itemUseMultiplier,
-                    stuckHorizontalMultiplier, stuckVerticalMultiplier, gravityAirborne, factor);
+                    stuckHorizontalMultiplier, stuckVerticalMultiplier, gravityAirborne,
+                    factor, specialVerticalSurface);
         }
         public Snapshot(boolean ordinaryGround, boolean ordinaryAir,
                         boolean sprinting, boolean sneaking, boolean usingItem,
@@ -808,7 +812,8 @@ public final class MotionEnvironment implements Listener {
                 || Math.abs(previous.itemUseMultiplier() - current.itemUseMultiplier()) > 1.0e-6
                 || Math.abs(previous.stuckHorizontalMultiplier() - current.stuckHorizontalMultiplier()) > 1.0e-6
                 || Math.abs(previous.stuckVerticalMultiplier() - current.stuckVerticalMultiplier()) > 1.0e-6
-                || Math.abs(previous.blockSpeedFactor() - current.blockSpeedFactor()) > 1.0e-6;
+                || Math.abs(previous.blockSpeedFactor() - current.blockSpeedFactor()) > 1.0e-6
+                || previous.specialVerticalSurface() != current.specialVerticalSurface();
     }
 
     private Snapshot sample(Player player) {
@@ -865,6 +870,7 @@ public final class MotionEnvironment implements Listener {
                 && movementSpeed.getValue() >= 0 && movementSpeed.getValue() <= 1024;
         Location location = player.getLocation();
         float blockSpeedFactor = effectiveBlockSpeedFactor(player);
+        boolean specialVerticalSurface = specialVerticalSurface(player);
         double frictionValue = frictionModifier == null ? Double.NaN : frictionModifier.getValue();
         float groundFriction = supported && usableGroundSpeed && knownGround && state.onGround()
                 ? groundFriction(player, frictionValue, state.supportY()) : Float.NaN;
@@ -912,7 +918,19 @@ public final class MotionEnvironment implements Listener {
                 levitationAmplifier, verticalAir,
                 Double.isFinite(sneakValue) ? (float) sneakValue : 0.3f, useMultiplier,
                 stuckHorizontalMultiplier, stuckVerticalMultiplier, gravityAirborne,
-                blockSpeedFactor);
+                blockSpeedFactor, specialVerticalSurface);
+    }
+
+    private boolean specialVerticalSurface(Player player) {
+        var handle = ((CraftPlayer) player).getHandle();
+        BlockPos support = handle.getBlockPosBelowThatAffectsMyMovement();
+        World world = player.getWorld();
+        if (!world.isChunkLoaded(support.getX() >> 4, support.getZ() >> 4)) return true;
+        var supportBlock = ((CraftBlock) world.getBlockAt(support.getX(), support.getY(), support.getZ()))
+                .getBlockState().getBlock();
+        var feetBlock = ((CraftBlock) player.getLocation().getBlock()).getBlockState().getBlock();
+        return supportBlock.getBounceRestitution() != 0.0f || supportBlock.getJumpFactor() != 1.0f
+                || feetBlock.getBounceRestitution() != 0.0f || feetBlock.getJumpFactor() != 1.0f;
     }
 
     private float effectiveBlockSpeedFactor(Player player) {
@@ -1120,9 +1138,7 @@ public final class MotionEnvironment implements Listener {
                 var nmsBlock = ((CraftBlock) floor).getBlockState().getBlock();
                 // Speed and bounce factors change motion outside the simple ground recurrence.
                 float speedFactor = nmsBlock.getSpeedFactor();
-                if (!Float.isFinite(speedFactor) || speedFactor < 0 || speedFactor > 4
-                        || nmsBlock.getBounceRestitution() != 0.0f
-                        || nmsBlock.getJumpFactor() != 1.0f)
+                if (!Float.isFinite(speedFactor) || speedFactor < 0 || speedFactor > 4)
                     return Float.NaN;
                 float blockFriction = modifiedFriction(nmsBlock.getFriction(), modifier);
                 if (Float.isNaN(friction)) friction = blockFriction;
@@ -1147,8 +1163,7 @@ public final class MotionEnvironment implements Listener {
         var nmsBlock = ((CraftBlock) floor).getBlockState().getBlock();
         float blockSpeed = nmsBlock.getSpeedFactor();
         float friction = modifiedFriction(nmsBlock.getFriction(), modifier);
-        if (nmsBlock.getBounceRestitution() != 0.0f || nmsBlock.getJumpFactor() != 1.0f
-                || !Float.isFinite(blockSpeed) || blockSpeed < 0 || blockSpeed > 4
+        if (!Float.isFinite(blockSpeed) || blockSpeed < 0 || blockSpeed > 4
                 || !Float.isFinite(friction))
             return Float.NaN;
 
