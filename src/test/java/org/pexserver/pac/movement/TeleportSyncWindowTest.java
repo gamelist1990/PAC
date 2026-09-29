@@ -52,4 +52,32 @@ class TeleportSyncWindowTest {
         assertTrue(window.confirm(2, 10_100));
         assertFalse(window.suppressed(10_300));
     }
+    @Test void verusVoidTpCannotUnlockWithForgedOrStaleTeleportIds() {
+        var window = new TeleportSyncWindow();
+        window.sent(77, 10_000);
+
+        assertFalse(window.confirm(0, 10_010));
+        assertFalse(window.confirm(76, 10_020));
+        assertFalse(window.confirm(78, 10_030));
+        assertTrue(window.suppressed(10_500));
+
+        assertTrue(window.confirm(77, 10_600));
+        assertTrue(window.suppressed(10_799));
+        assertFalse(window.suppressed(10_800));
+    }
+
+    @Test void repeatedCorrectionsCannotCreateUnlimitedDisablerGrace() {
+        var window = new TeleportSyncWindow();
+        window.sent(1, 20_000);
+        assertTrue(window.suppressed(20_000));
+
+        // A client may acknowledge/cancel corrections locally and provoke more
+        // server teleports, but one continuous grace period is capped at 5s.
+        for (int id = 2; id <= 20; id++)
+            window.sent(id, 20_000 + id * 200L);
+
+        assertFalse(window.suppressed(25_000));
+        assertTrue(window.pending());
+    }
+
 }

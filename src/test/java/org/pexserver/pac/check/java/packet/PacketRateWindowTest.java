@@ -21,4 +21,16 @@ class PacketRateWindowTest {
         assertEquals(8_192, window.record(1_000_010_000L));
         assertEquals(1, window.record(2_000_010_000L));
     }
+    @Test void decodedTransportCeilingIsFarAboveOrdinaryPacketRates() {
+        PacketRateWindow window = new PacketRateWindow();
+        long now = 5_000_000_000L;
+        int count = 0;
+        for (int i = 0; i < 1_200; i++)
+            count = window.record(now + i);
+
+        assertEquals(1_200, count);
+        assertEquals(1_201, window.record(now + 1_200),
+                "the transport guard can reject only after the configured high ceiling");
+    }
+
 }

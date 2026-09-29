@@ -52,6 +52,7 @@ import org.pexserver.pac.check.java.action.NukerCheck;
 import org.pexserver.pac.check.java.action.InventoryMoveCheck;
 import org.pexserver.pac.check.shared.BoatFlightCheck;
 import org.pexserver.pac.check.shared.CrashChestCheck;
+import org.pexserver.pac.check.shared.ExploitActionCheck;
 import org.pexserver.pac.check.shared.ScaffoldCheck;
 import org.pexserver.pac.check.shared.ReachCheck;
 import org.pexserver.pac.check.shared.KillAuraCheck;
@@ -78,7 +79,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public final class PacPlugin extends JavaPlugin implements Listener {
     static final String CONFIG_VERSION_KEY = "config-version";
-    static final int CONFIG_VERSION = 15;
+    static final int CONFIG_VERSION = 17;
     private static final String DEFAULT_BAN_SUFFIX = "&7Support: &bdiscord.gg/xxxx";
     private static final String DEFAULT_KICK_SUFFIX = "";
     private static final long JAVA_CORRECTION_INTERVAL_NANOS = 50_000_000L;
@@ -157,11 +158,13 @@ public final class PacPlugin extends JavaPlugin implements Listener {
         inventoryMove = new InventoryMoveCheck(this);
         checks.register(inventoryMove);
         CrashChestCheck crashChest = new CrashChestCheck(this);
+        ExploitActionCheck exploitActions = new ExploitActionCheck(this);
         ScaffoldCheck scaffold = new ScaffoldCheck(this);
         reach = new ReachCheck(this);
         vehicleMovement = new VehicleMovementCheck(this);
         killAura = new KillAuraCheck(this);
         checks.register(crashChest);
+        checks.register(exploitActions);
         checks.register(scaffold);
         checks.register(reach);
         checks.register(vehicleMovement);
@@ -192,6 +195,7 @@ public final class PacPlugin extends JavaPlugin implements Listener {
         Bukkit.getPluginManager().registerEvents(fastBreak, this);
         Bukkit.getPluginManager().registerEvents(inventoryMove, this);
         Bukkit.getPluginManager().registerEvents(crashChest, this);
+        Bukkit.getPluginManager().registerEvents(exploitActions, this);
         Bukkit.getPluginManager().registerEvents(scaffold, this);
         Bukkit.getPluginManager().registerEvents(reach, this);
         Bukkit.getPluginManager().registerEvents(vehicleMovement, this);
@@ -389,6 +393,17 @@ public final class PacPlugin extends JavaPlugin implements Listener {
             setDefault("detectors.inventory-move.ban-enabled", true);
             setDefault("detectors.inventory-move.cancel", true);
             setDefault("detectors.inventory-move.alert-score-threshold", 1);
+        }
+        if (version < 16) {
+            setDefault("detectors.exploit-actions.enabled", true);
+            setDefault("detectors.exploit-actions.ban-enabled", false);
+            setDefault("detectors.exploit-actions.kick-enabled", false);
+            setDefault("detectors.exploit-actions.cancel", true);
+            setDefault("detectors.exploit-actions.alert-score-threshold", 1);
+            setDefault("detectors.exploit-actions.kick-score-threshold", 10);
+        }
+        if (version < 17) {
+            setDefault("detectors.packet-flood.max-decoded-per-second", 1200);
         }
         if (version < CONFIG_VERSION) {
             getConfig().set(CONFIG_VERSION_KEY, CONFIG_VERSION);

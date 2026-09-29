@@ -10,12 +10,18 @@ public final class InvalidMovementCheck extends AbstractCheck implements PacketC
     @Override public void inspect(PacketContext context) {
         if (!context.flying().hasPositionChanged()) return;
         var location = context.location();
-        if (!Double.isFinite(location.getX()) || !Double.isFinite(location.getY()) || !Double.isFinite(location.getZ())
-                || Math.abs(location.getX()) > 30_000_000 || Math.abs(location.getZ()) > 30_000_000) {
+        if (invalidCoordinates(location.getX(), location.getY(), location.getZ())) {
             // These values cannot safely enter Paper's movement pipeline, even
             // when optional rollback/setback actions are globally disabled.
             context.event().setCancelled(true);
             flagLimited(context, "non-finite or out-of-bounds coordinates");
         }
+    }
+
+    static boolean invalidCoordinates(double x, double y, double z) {
+        return !Double.isFinite(x) || !Double.isFinite(y) || !Double.isFinite(z)
+                || Math.abs(x) > 30_000_000
+                || Math.abs(y) > 30_000_000
+                || Math.abs(z) > 30_000_000;
     }
 }

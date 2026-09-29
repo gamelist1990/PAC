@@ -14,6 +14,7 @@ import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientPl
 import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientTeleportConfirm;
 import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientVehicleMove;
 import org.pexserver.pac.PacPlugin;
+import org.pexserver.pac.check.shared.ExploitActionCheck;
 import org.pexserver.pac.check.shared.KillAuraCheck;
 import org.pexserver.pac.check.shared.VehicleMovementCheck;
 import org.pexserver.pac.check.java.packet.CriticalPacketCheck;
@@ -178,6 +179,11 @@ public final class PacketChecks implements PacketListener, Listener {
 
     @Override public void onPacketReceive(PacketReceiveEvent event) {
         UUID eventUuid = event.getUser().getUUID();
+        if (eventUuid != null && !plugin.isBedrockPlayer(eventUuid)
+                && plugin.checks().get("packet-flood") instanceof PacketFloodCheck flood
+                && flood.inspectDecodedPacket(plugin, eventUuid, event, System.nanoTime())) {
+            return;
+        }
         if (eventUuid != null && !plugin.isBedrockPlayer(eventUuid) && plugin.environment() != null) {
             ClientVersion version = event.getUser().getClientVersion();
             if (version != null && version != ClientVersion.UNKNOWN) {
@@ -262,6 +268,15 @@ public final class PacketChecks implements PacketListener, Listener {
         UUID uuid = eventUuid;
         if (uuid == null || plugin.isExempt(uuid)) return;
         WrapperPlayClientPlayerFlying flying = new WrapperPlayClientPlayerFlying(event);
+        if (plugin.checks().get("exploit-actions") instanceof ExploitActionCheck exploitActions
+                && plugin.enabled(uuid, exploitActions)) {
+            var movement = flying.getLocation();
+            if (exploitActions.onMovementPacket(uuid, flying.hasPositionChanged(),
+                    movement.getX(), movement.getY(), movement.getZ())) {
+                event.setCancelled(true);
+                return;
+            }
+        }
         long now = System.currentTimeMillis();
         var externalUpdates = externalMotion.since(uuid,
                 motionSequencesDelivered.getOrDefault(uuid, 0L), now);

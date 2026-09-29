@@ -11,11 +11,16 @@ public final class InvalidPitchCheck extends AbstractCheck implements PacketChec
         if (!context.flying().hasRotationChanged()) return;
         float pitch = context.location().getPitch();
         float yaw = context.location().getYaw();
-        if (!Float.isFinite(pitch) || !Float.isFinite(yaw) || Math.abs(pitch) > 90.01f) {
+        if (invalidRotation(yaw, pitch)) {
             // Reject malformed protocol rotations independently of the
             // optional anti-cheat rollback switch.
             context.event().setCancelled(true);
             flagLimited(context, "invalid rotation");
         }
+    }
+
+    static boolean invalidRotation(float yaw, float pitch) {
+        return !Float.isFinite(yaw) || !Float.isFinite(pitch)
+                || pitch < -90.0f || pitch > 90.0f;
     }
 }

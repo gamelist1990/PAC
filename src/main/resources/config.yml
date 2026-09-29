@@ -2,7 +2,7 @@ alerts:
   enabled: true
   prefix: '&8[&cPAC&8] &7'
   minimum-interval-ms: 1000
-config-version: 15
+config-version: 17
 api:
   # External plugins can only change PAC settings when this is true.
   control-authority: false
@@ -27,7 +27,10 @@ detectors:
     enabled: true
     ban-enabled: true
     cancel: true
+    # Tight movement-simulation limit plus a separate high-ceiling guard for
+    # all decoded Play packets. The latter is DoS protection, not timer evidence.
     max-per-second: 240
+    max-decoded-per-second: 1200
     alert-score-threshold: 3
   invalid-pitch:
     enabled: true
@@ -122,6 +125,16 @@ detectors:
   crash-chest:
     enabled: true
     ban-enabled: true
+    cancel: true
+    alert-score-threshold: 1
+    kick-enabled: false
+    kick-score-threshold: 10
+  exploit-actions:
+    # MultiActions/VehicleOneHit prevention. Automatic punishments stay off by
+    # default because custom gameplay plugins may intentionally permit unusual
+    # action combinations; impossible actions are still cancelled when enabled.
+    enabled: true
+    ban-enabled: false
     cancel: true
     alert-score-threshold: 1
     kick-enabled: false
