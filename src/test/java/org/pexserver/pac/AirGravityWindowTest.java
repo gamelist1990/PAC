@@ -90,6 +90,21 @@ class AirGravityWindowTest {
                 "one-second intervals must retain the trajectory and reject sustained ascent");
     }
 
+    @Test void tinyInitialVelocityContradictionDoesNotFlagVanillaTransitionNoise() {
+        var window = new AirGravityWindow();
+        double y = 68.0013;
+        double velocity = 0.26;
+        assertFalse(window.sample(true, y, 0.08, 0.98f, 1_000));
+
+        for (int tick = 1; tick <= 7; tick++) {
+            velocity = (velocity - 0.08) * 0.98f;
+            y += velocity;
+            double observed = tick == 7 ? y + 0.14 : y;
+            assertFalse(window.sample(true, observed, 0.08, 0.98f, 1_000 + tick * 50L),
+                    "a tiny fitted initial-velocity contradiction must not become a hard Flight finding");
+        }
+    }
+
     @Test void lagAndIneligibleTransitionsDiscardTrajectory() {
         var window = new AirGravityWindow();
         for (int i = 0; i < 40; i++) {
