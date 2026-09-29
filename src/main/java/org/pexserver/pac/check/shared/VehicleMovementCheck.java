@@ -5,6 +5,8 @@ import org.bukkit.Location;
 import org.bukkit.entity.Boat;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
+import org.bukkit.craftbukkit.entity.CraftEntity;
+import org.bukkit.craftbukkit.entity.CraftPlayer;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
@@ -112,7 +114,7 @@ public final class VehicleMovementCheck extends AbstractCheck implements EventCh
                                          double x, double y, double z,
                                          double velocityX, double velocityY, double velocityZ,
                                          boolean gravity, boolean airborne, boolean inWater,
-                                         long sampledAt) { }
+                                         boolean serverControlled, long sampledAt) { }
 
     record VehiclePacketFinding(boolean evaluated, boolean impossible,
                                 double horizontal, double vertical,
@@ -123,12 +125,42 @@ public final class VehicleMovementCheck extends AbstractCheck implements EventCh
         }
     }
 
+    static final class UnauthorizedControlWindow {
+        private UUID vehicleId;
+        private long lastAt;
+        private int count;
+
+        boolean sample(UUID nextVehicleId, boolean unauthorized, long now) {
+            if (!unauthorized) {
+                reset();
+                return false;
+            }
+            if (nextVehicleId == null || vehicleId == null || !vehicleId.equals(nextVehicleId)
+                    || now < lastAt || now - lastAt > 300) {
+                vehicleId = nextVehicleId;
+                count = 1;
+            } else {
+                count = Math.min(3, count + 1);
+            }
+            lastAt = now;
+            return count >= 2;
+        }
+
+        void reset() {
+            vehicleId = null;
+            lastAt = 0;
+            count = 0;
+        }
+    }
+
     private record VehicleState(UUID driver, GenericVehicleWindow window) { }
 
     private final PacPlugin plugin;
     private final Map<UUID, DismountBoostWindow> dismounts = new HashMap<>();
     private final Map<UUID, VehicleState> vehicles = new HashMap<>();
     private final ConcurrentHashMap<UUID, PacketVehicleSnapshot> packetVehicles =
+            new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<UUID, UnauthorizedControlWindow> unauthorizedControl =
             new ConcurrentHashMap<>();
 
     public VehicleMovementCheck(PacPlugin plugin) {
@@ -188,6 +220,22 @@ public final class VehicleMovementCheck extends AbstractCheck implements EventCh
                 || !Double.isFinite(targetZ))
             return false;
 
+        UnauthorizedControlWindow authority = unauthorizedControl.computeIfAbsent(
+                uuid, ignored -> new UnauthorizedControlWindow());
+        boolean confirmedUnauthorized = authority.sample(
+                state.vehicleId(), !state.serverControlled(), now);
+        if (!state.serverControlled()) {
+            // Vanilla ServerGamePacketListenerImpl only accepts vehicle movement
+            // when this player is the server-side controlling passenger. Drop
+            // the packet immediately just as vanilla would; only report after a
+            // second fresh packet so mount/dismount transition noise is not scored.
+            if (confirmedUnauthorized) {
+                flagLimited(uuid, () -> plugin.flag(uuid, this,
+                        "vehicle control without server authority: type=" + state.type()));
+            }
+            return true;
+        }
+
         VehiclePacketFinding finding = packetFinding(
                 state.x(), state.y(), state.z(),
                 state.velocityX(), state.velocityY(), state.velocityZ(),
@@ -232,18 +280,22 @@ public final class VehicleMovementCheck extends AbstractCheck implements EventCh
             if (vehicle == null || vehicle.getPassengers().isEmpty()
                     || !vehicle.getPassengers().get(0).getUniqueId().equals(uuid)) {
                 packetVehicles.remove(uuid);
+                unauthorizedControl.remove(uuid);
                 continue;
             }
 
             Location sampled = vehicle.getLocation();
             Vector sampledVelocity = vehicle.getVelocity();
+            boolean serverControlled = vehicle instanceof CraftEntity craftVehicle
+                    && ((CraftPlayer) player).getHandle().equals(
+                            craftVehicle.getHandle().getControllingPassenger());
             packetVehicles.put(uuid, new PacketVehicleSnapshot(
                     vehicle.getUniqueId(), vehicle.getType().name(),
                     sampled.getX(), sampled.getY(), sampled.getZ(),
                     sampledVelocity.getX(), sampledVelocity.getY(), sampledVelocity.getZ(),
                     vehicle.hasGravity(),
                     vehicle.hasGravity() && !vehicle.isOnGround() && !vehicle.isInWater(),
-                    vehicle.isInWater(), System.currentTimeMillis()));
+                    vehicle.isInWater(), serverControlled, System.currentTimeMillis()));
 
             if (vehicle instanceof Boat) continue;
             UUID vehicleId = vehicle.getUniqueId();
@@ -283,6 +335,7 @@ public final class VehicleMovementCheck extends AbstractCheck implements EventCh
         super.forget(uuid);
         dismounts.remove(uuid);
         packetVehicles.remove(uuid);
+        unauthorizedControl.remove(uuid);
         vehicles.entrySet().removeIf(entry -> entry.getValue().driver().equals(uuid));
     }
 }
