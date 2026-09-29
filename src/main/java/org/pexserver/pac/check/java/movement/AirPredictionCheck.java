@@ -12,6 +12,7 @@ import org.pexserver.pac.movement.AirSilenceWindow;
 import org.pexserver.pac.movement.AirHoverWindow;
 import org.pexserver.pac.movement.AirGravityWindow;
 import org.pexserver.pac.movement.PredictionCorrectionLock;
+import org.pexserver.pac.movement.RiptideMotionWindow;
 import org.pexserver.pac.packet.ExternalMotionTracker;
 
 import java.util.Locale;
@@ -38,6 +39,7 @@ public final class AirPredictionCheck extends AbstractCheck implements PacketChe
     }
 
     private final ConcurrentHashMap<UUID, State> states = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<UUID, RiptideMotionWindow> riptideWindows = new ConcurrentHashMap<>();
 
     @Override public String key() { return "air-prediction"; }
     @Override public boolean supportsBedrock() { return false; }
@@ -47,6 +49,31 @@ public final class AirPredictionCheck extends AbstractCheck implements PacketChe
         // prediction still needs every ordered coordinate; dropping one breaks
         // velocity continuity and lets repeated Flight setbacks erase evidence.
         var serverMotion = context.plugin().serverMotionGrant(context.uuid());
+        RiptideMotionWindow riptide = riptideWindows.get(context.uuid());
+        if (riptide != null) {
+            RiptideMotionWindow.Sample riptideSample;
+            synchronized (riptide) {
+                var location = context.location();
+                riptideSample = riptide.accept(context.flying().hasPositionChanged(),
+                        location.getX(), location.getY(), location.getZ(),
+                        System.currentTimeMillis(), context.timingUncertain(),
+                        context.externalImpulse() != null || serverMotion != null);
+                if (!riptide.active()) riptideWindows.remove(context.uuid(), riptide);
+            }
+            if (riptideSample.excessive()) {
+                flagLimited(context, () -> String.format(Locale.ROOT,
+                        "Riptide movement exceeded server-authoritative impulse: horizontal=%.3f/%.3f vertical=%.3f/%.3f",
+                        riptideSample.horizontalPerFrame(), riptideSample.allowedHorizontal(),
+                        riptideSample.verticalPerFrame(), riptideSample.allowedVertical()));
+                if (context.plugin().cancel(this, context.uuid())) {
+                    context.cancel(this);
+                    context.plugin().correctJavaMovement(context.uuid(),
+                            riptideSample.rollbackX(), riptideSample.rollbackY(),
+                            riptideSample.rollbackZ());
+                }
+                return;
+            }
+        }
         if (context.timingUncertain() && context.externalImpulse() == null && serverMotion == null) {
             states.remove(context.uuid());
             return;
@@ -395,8 +422,21 @@ public final class AirPredictionCheck extends AbstractCheck implements PacketChe
         }
     }
 
+    /** Capture the exact vanilla Riptide impulse before the client applies it. */
+    public void onRiptide(UUID uuid, double x, double y, double z,
+                          double expectedVelocityX, double expectedVelocityY,
+                          double expectedVelocityZ, long now) {
+        RiptideMotionWindow window = riptideWindows.computeIfAbsent(
+                uuid, ignored -> new RiptideMotionWindow());
+        synchronized (window) {
+            window.grant(x, y, z, expectedVelocityX, expectedVelocityY,
+                    expectedVelocityZ, now);
+        }
+    }
+
     @Override public void forget(UUID uuid) {
         super.forget(uuid);
         states.remove(uuid);
+        riptideWindows.remove(uuid);
     }
 }
