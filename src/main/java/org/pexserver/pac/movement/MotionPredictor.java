@@ -151,6 +151,13 @@ public final class MotionPredictor {
                 Math.hypot(diagonal.forward(), diagonal.strafe())));
     }
 
+    public static Motion sprintJumpImpulse(Motion previous, float yaw) {
+        if (previous == null || !Float.isFinite(yaw)) return previous;
+        float radians = yaw * 0.017453292f;
+        return new Motion(previous.dx() - Mth.sin((double) radians) * 0.2,
+                previous.dy(), previous.dz() + Mth.cos((double) radians) * 0.2);
+    }
+
     public static double maximumAirStep(Motion previous, boolean sprinting, float horizontalDrag) {
         return Math.hypot(previous.dx(), previous.dz()) * horizontalDrag
                 + airAcceleration(sprinting);

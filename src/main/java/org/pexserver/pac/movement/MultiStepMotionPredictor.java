@@ -153,8 +153,11 @@ public final class MultiStepMotionPredictor {
         float sneakScale = environment.sneaking() ? environment.sneakingSpeed() : 1.0f;
         MotionCollisionSnapshot.MoveBuffer moves = MotionCollisionSnapshot.predictionBuffer();
         for (MotionPredictor.Input input : frame.inputs()) {
+            MotionPredictor.Motion jumpInitial = environment.sprinting() && input.jump()
+                    ? MotionPredictor.sprintJumpImpulse(initialVelocity, frame.yaw())
+                    : initialVelocity;
             MotionPredictor.Motion velocity = MotionPredictor.predictAirInputClient(
-                    initialVelocity, ZERO, frame.yaw(), environment.sprinting(),
+                    jumpInitial, ZERO, frame.yaw(), environment.sprinting(),
                     environment.horizontalDrag(), sneakScale, environment.itemUseMultiplier(), input)
                     .closest();
             int moveCount;

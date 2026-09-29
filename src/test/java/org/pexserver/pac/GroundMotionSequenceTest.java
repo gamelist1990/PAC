@@ -609,6 +609,76 @@ class GroundMotionSequenceTest {
                         + response);
     }
 
+    @Test void sprintingJumpResetCarriesVanillaHorizontalJumpImpulse() {
+        var sequence = new GroundMotionSequence();
+        sequence.accept(true, true, 0, 64, 0, 0, ground(0, 1, 1_000), 1_000,
+                null, null, fullFloor(1_000));
+
+        var input = new MotionPredictor.Input(true, false, false, false,
+                true, false, true);
+        var inputs = new JavaInputCapture.Window(input, null);
+        var impactEnvironment = ground(0, 2, 1_050).withSprinting(true, 0.13);
+        var impulseVelocity = new MotionPredictor.Motion(0.044, 0.275, 0.214);
+        var jumpInitial = MotionPredictor.sprintJumpImpulse(impulseVelocity, 0);
+        var expected = MotionPredictor.predictAirInputClient(jumpInitial,
+                new MotionPredictor.Motion(0, 0, 0), 0, true, 0.91f,
+                1, 1, input).closest();
+
+        var response = sequence.accept(true, false,
+                expected.dx(), 64.42, expected.dz(), 0,
+                impactEnvironment, 1_050, inputs,
+                new ExternalMotionTracker.Impulse(1, impulseVelocity.dx(), impulseVelocity.dy(),
+                        impulseVelocity.dz(), 1_049, false, true),
+                fullFloor(1_050));
+
+        assertFalse(response.externalImpulseMismatch());
+        assertEquals(0, response.offset(), 1.0e-10,
+                "sprint-jump reset must include Vanilla's +0.2 horizontal jump impulse");
+        assertEquals(expected.dx(), sequence.motion().dx(), 1.0e-10);
+        assertEquals(expected.dz(), sequence.motion().dz(), 1.0e-10);
+
+        var landingEnvironment = groundAt(expected.dx(), 64.42, expected.dz(), 3, 1_100)
+                .withSprinting(true, 0.13);
+        var next = MotionPredictor.predictGroundInputClient(sequence.motion(),
+                new MotionPredictor.Motion(0, 0, 0), 0, landingEnvironment.movementSpeed(),
+                landingEnvironment.groundFriction(), landingEnvironment.horizontalDrag(),
+                1, landingEnvironment.itemUseMultiplier(), input).closest();
+        var landingTail = sequence.accept(true, false,
+                expected.dx() + next.dx(), 64.42, expected.dz() + next.dz(), 0,
+                landingEnvironment, 1_100, inputs, null, fullFloor(1_100));
+
+        assertTrue(landingTail.evaluated());
+        assertEquals(0, landingTail.speedExcess(), 1.0e-10,
+                "the +0.2 sprint-jump momentum must remain in the post-hit ground tail");
+    }
+
+    @Test void sprintResetOnImpactUsesClientSprintAcceleration() {
+        var sequence = new GroundMotionSequence();
+        sequence.accept(true, true, 0, 64, 0, 0, ground(0, 1, 1_000), 1_000,
+                null, null, fullFloor(1_000));
+
+        var input = new MotionPredictor.Input(true, false, false, false,
+                false, false, true);
+        var inputs = new JavaInputCapture.Window(input, null);
+        var impactEnvironment = ground(0, 2, 1_050).withSprinting(true, 0.13);
+        var impulseVelocity = new MotionPredictor.Motion(0, 0.275, -0.30);
+        var expected = MotionPredictor.predictGroundInputClient(impulseVelocity,
+                new MotionPredictor.Motion(0, 0, 0), 0, impactEnvironment.movementSpeed(),
+                impactEnvironment.groundFriction(), impactEnvironment.horizontalDrag(),
+                1, impactEnvironment.itemUseMultiplier(), input).closest();
+
+        var response = sequence.accept(true, false,
+                expected.dx(), 64, expected.dz(), 0,
+                impactEnvironment, 1_050, inputs,
+                new ExternalMotionTracker.Impulse(1, impulseVelocity.dx(), impulseVelocity.dy(),
+                        impulseVelocity.dz(), 1_049, false, true),
+                fullFloor(1_050));
+
+        assertFalse(response.externalImpulseMismatch());
+        assertEquals(0, response.offset(), 1.0e-10,
+                "starting sprint on the impact frame is a legal client input transition");
+    }
+
     @Test void smallGroundDeltaImmediatelyAfterCombatImpulseIsNotMisclassifiedAsTakeoff() {
         var sequence = new GroundMotionSequence();
         sequence.accept(true, true, 0, 64, 0, 0, groundAt(0, 64, 0, 1, 1_000), 1_000,
