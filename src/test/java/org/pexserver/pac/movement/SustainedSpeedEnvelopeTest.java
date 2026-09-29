@@ -50,6 +50,50 @@ class SustainedSpeedEnvelopeTest {
                     + " speed=" + sample.speed() + " legal=" + sample.legalSpeed());
         }
     }
+    @Test void postGravitySprintJumpSignatureKeepsVanillaHorizontalImpulse() {
+        var envelope = new SustainedSpeedEnvelope();
+        double y = 64;
+        envelope.accept(0, y, 0, ground(0, 0, y), null, BASE_NANOS, false);
+
+        double firstDy = AirPredictor.nextDisplacement(0.42, 0.08, 0.98f);
+        y += firstDy;
+        var takeoff = envelope.accept(0.47, y, 0, air(1, 0.47, y), null,
+                BASE_NANOS + 50_000_000L, false);
+        assertFalse(takeoff.flagged());
+        assertTrue(takeoff.legalSpeed() > 0.45,
+                "the first post-gravity packet is still a Vanilla sprint-jump takeoff");
+
+        double secondDy = AirPredictor.nextDisplacement(firstDy, 0.08, 0.98f);
+        y += secondDy;
+        var airborne = envelope.accept(0.92, y, 0, air(2, 0.92, y), null,
+                BASE_NANOS + 100_000_000L, false);
+        assertFalse(airborne.flagged(),
+                "legal sprint-jump momentum must not accumulate speed evidence");
+    }
+
+    @Test void serverVelocitySurvivesRemoteUncertainSnapshotUntilEnvironmentCatchesUp() {
+        var envelope = new SustainedSpeedEnvelope();
+        long start = BASE_NANOS;
+        envelope.serverVelocity(1.4, 0, 64, 0, start);
+
+        assertFalse(envelope.accept(1.25, 64, 0, air(1, 1.25, 64), null,
+                start + 50_000_000L, false).flagged());
+        assertFalse(envelope.accept(2.40, 64, 0, air(2, 2.40, 64), null,
+                start + 100_000_000L, false).flagged());
+
+        // The client is already several blocks ahead while the main-thread
+        // ground/air sample is still at the launch point.
+        assertFalse(envelope.accept(3.40, 64, 0, unknown(3, 0, 64), null,
+                start + 200_000_000L, false).flagged());
+
+        assertFalse(envelope.accept(4.35, 64, 0, ice(4, 4.35), null,
+                start + 250_000_000L, false).flagged());
+        assertFalse(envelope.accept(5.21, 64, 0, ice(5, 5.21), null,
+                start + 300_000_000L, false).flagged(),
+                "an authorized AirDash must retain its legal tail after a transient remote snapshot");
+        envelope.endServerVelocity();
+    }
+
     @Test void catchesPointFourFlightWhileStayingOnFlatGround() {
         var envelope = new SustainedSpeedEnvelope();
         envelope.accept(0, 64, 0, ground(0, 0, 64), null, BASE_NANOS, false);
