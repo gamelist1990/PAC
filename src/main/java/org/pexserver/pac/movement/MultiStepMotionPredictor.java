@@ -518,7 +518,7 @@ public final class MultiStepMotionPredictor {
                 ? MotionPredictor.predictGroundInputClient(previous, ZERO, frame.yaw(),
                         environment.movementSpeed(), environment.groundFriction(),
                         environment.horizontalDrag(), sneakScale,
-                        environment.itemUseMultiplier(), input).closest()
+                        environment.itemUseMultiplier(), environment.velocityMultiplier(), input).closest()
                 : MotionPredictor.predictAirInputClient(previous, ZERO, frame.yaw(),
                         environment.sprinting(), environment.horizontalDrag(), sneakScale,
                         environment.itemUseMultiplier(), input).closest();
@@ -538,7 +538,8 @@ public final class MultiStepMotionPredictor {
                 float sneakScale = environment.sneaking() ? environment.sneakingSpeed() : 1.0f;
                 acceleration = MotionPredictor.maximumGroundStepClient(ZERO,
                         environment.movementSpeed(), environment.groundFriction(),
-                        environment.horizontalDrag(), sneakScale, environment.itemUseMultiplier());
+                        environment.horizontalDrag(), sneakScale, environment.itemUseMultiplier(),
+                        environment.velocityMultiplier());
             } else {
                 float sneakScale = environment.sneaking() ? environment.sneakingSpeed() : 1.0f;
                 acceleration = MotionPredictor.maximumAirTravelClient(ZERO,
@@ -555,7 +556,7 @@ public final class MultiStepMotionPredictor {
             double acceleration = ground
                     ? MotionPredictor.maximumGroundStepClient(ZERO, last.movementSpeed(),
                             last.groundFriction(), last.horizontalDrag(), sneakScale,
-                            last.itemUseMultiplier())
+                            last.itemUseMultiplier(), last.velocityMultiplier())
                     : MotionPredictor.maximumAirTravelClient(ZERO, last.sprinting(),
                             last.horizontalDrag(), sneakScale, last.itemUseMultiplier(), 1);
             if (ground && includeStepHeight && frames.getLast().collisions() != null)
