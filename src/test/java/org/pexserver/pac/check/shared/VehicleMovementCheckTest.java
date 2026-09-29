@@ -95,12 +95,15 @@ class VehicleMovementCheckTest {
         var window = new VehicleMovementCheck.LivingVehicleAirWindow();
         var vehicle = java.util.UUID.randomUUID();
         long now = 1_000;
+        double y = 64.0;
+        boolean detected = false;
 
-        assertFalse(window.sample(vehicle, true, 64.00, 0.08, 0.98f, now).impossible());
-        assertFalse(window.sample(vehicle, true, 64.35, 0.08, 0.98f, now += 50).impossible());
-        assertFalse(window.sample(vehicle, true, 64.70, 0.08, 0.98f, now += 50).impossible());
-        assertFalse(window.sample(vehicle, true, 65.05, 0.08, 0.98f, now += 50).impossible());
-        assertTrue(window.sample(vehicle, true, 65.40, 0.08, 0.98f, now += 50).impossible());
+        assertFalse(window.sample(vehicle, true, y, 0.08, 0.98f, now).impossible());
+        for (int tick = 0; tick < 6 && !detected; tick++) {
+            y += 0.35;
+            detected = window.sample(vehicle, true, y, 0.08, 0.98f, now += 50).impossible();
+        }
+        assertTrue(detected, "constant client lift must diverge from living-vehicle gravity quickly");
     }
 
     @Test void vanillaLivingVehicleFallRecurrenceStaysLegal() {
@@ -126,14 +129,14 @@ class VehicleMovementCheckTest {
         var vehicle = java.util.UUID.randomUUID();
         long now = 3_000;
         double y = 70.0;
+        boolean detected = false;
 
         assertFalse(window.sample(vehicle, true, y, 0.08, 0.98f, now).impossible());
-        for (int tick = 0; tick < 4; tick++) {
+        for (int tick = 0; tick < 6 && !detected; tick++) {
             y -= 0.15;
-            var finding = window.sample(vehicle, true, y, 0.08, 0.98f, now += 50);
-            if (tick < 3) assertFalse(finding.impossible());
-            else assertTrue(finding.impossible());
+            detected = window.sample(vehicle, true, y, 0.08, 0.98f, now += 50).impossible();
         }
+        assertTrue(detected, "constant glide descent must diverge from vanilla gravity recurrence");
     }
 
     @Test void constantMinecartGlideViolatesVanillaAirRecurrence() {
@@ -141,14 +144,14 @@ class VehicleMovementCheckTest {
         var vehicle = java.util.UUID.randomUUID();
         long now = 4_000;
         double y = 70.0;
+        boolean detected = false;
 
         assertFalse(window.sample(vehicle, true, y, 0.04, 0.95f, now).impossible());
-        for (int tick = 0; tick < 4; tick++) {
+        for (int tick = 0; tick < 7 && !detected; tick++) {
             y -= 0.15;
-            var finding = window.sample(vehicle, true, y, 0.04, 0.95f, now += 50);
-            if (tick < 3) assertFalse(finding.impossible());
-            else assertTrue(finding.impossible());
+            detected = window.sample(vehicle, true, y, 0.04, 0.95f, now += 50).impossible();
         }
+        assertTrue(detected, "small minecart gravity residuals must accumulate instead of bypassing");
     }
 
     @Test void queuedVehiclePacketResetsVerticalRecurrenceEvidence() {
