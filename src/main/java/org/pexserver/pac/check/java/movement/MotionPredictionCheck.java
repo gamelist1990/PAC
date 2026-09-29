@@ -249,6 +249,19 @@ public final class MotionPredictionCheck extends AbstractCheck implements Packet
                 correct(context, state, previous, previousMotion, false);
                 return;
             }
+            if (sample.surfaceVerticalAnomaly() != GroundMotionSequence.SurfaceVerticalAnomaly.NONE) {
+                state.speedEvidence.reset();
+                String reason = switch (sample.surfaceVerticalAnomaly()) {
+                    case BOUNCE_SUPPRESSED -> "expected surface bounce was suppressed";
+                    case BOUNCE_EXCESS -> "surface rebound exceeded vanilla restitution";
+                    case NONE -> "";
+                };
+                flagLimited(context, () -> String.format(Locale.ROOT,
+                        "%s: dy=%.3f horizontal=%.3f",
+                        reason, sample.verticalDistance(), sample.horizontalDistance()));
+                correct(context, state, previous, previousMotion, true);
+                return;
+            }
             if (sample.impossibleTakeoff()) {
                 state.speedEvidence.reset();
                 flagLimited(context, () -> String.format(Locale.ROOT,
