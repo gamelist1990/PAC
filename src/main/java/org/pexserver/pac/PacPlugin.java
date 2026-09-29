@@ -531,11 +531,28 @@ public final class PacPlugin extends JavaPlugin implements Listener {
                                           double x, double y, double z,
                                           double dx, double dy, double dz,
                                           float yaw, float pitch) {
-        if (!acceptingBedrockInput) return false;
-        if (uuid == null) return false;
+        return acceptBedrockAuthInput(uuid, tick, x, y, z, dx, dy, dz,
+                yaw, pitch, "UNKNOWN");
+    }
+
+    public boolean acceptBedrockAuthInput(UUID uuid, long tick,
+                                          double x, double y, double z,
+                                          double dx, double dy, double dz,
+                                          float yaw, float pitch, String inputMode) {
+        if (!acceptingBedrockInput || uuid == null) return false;
         bridgeObservedPlayers.add(uuid);
         KillAuraCheck currentKillAura = killAura;
-        if (currentKillAura != null) currentKillAura.onBedrockRotation(uuid, yaw, pitch);
+        if (currentKillAura != null)
+            currentKillAura.onBedrockRotation(uuid, yaw, pitch, inputMode);
+        return true;
+    }
+
+    /** Called by the Bedrock bridge for an ITEM_USE_ON_ENTITY attack transaction. */
+    public boolean acceptBedrockAttack(UUID uuid, int entityId) {
+        if (!acceptingBedrockInput || uuid == null) return false;
+        bridgeObservedPlayers.add(uuid);
+        KillAuraCheck currentKillAura = killAura;
+        if (currentKillAura != null) currentKillAura.onAttackPacket(uuid, entityId);
         return true;
     }
     /** Receives physics violations from the bundled Geyser engine. */
