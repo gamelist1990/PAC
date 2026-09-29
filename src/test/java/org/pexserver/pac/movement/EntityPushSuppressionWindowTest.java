@@ -100,7 +100,7 @@ class EntityPushSuppressionWindowTest {
     }
 
     private static MotionEnvironment.Snapshot ground(long at) {
-        return new MotionEnvironment.Snapshot(true, false, false, false, false,
+        return new MotionEnvironment.Snapshot(true, false, false, false,
                 0, 0.1, 0, 64, 0, (int) (at / 50), at);
     }
 
