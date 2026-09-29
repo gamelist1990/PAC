@@ -91,4 +91,59 @@ class VehicleMovementCheckTest {
         assertTrue(window.sample(second, true, 1_200));
     }
 
+    @Test void constantVehicleControlLiftViolatesLivingVehicleGravity() {
+        var window = new VehicleMovementCheck.LivingVehicleAirWindow();
+        var vehicle = java.util.UUID.randomUUID();
+        long now = 1_000;
+
+        assertFalse(window.sample(vehicle, true, 64.00, 0.08, 0.98f, now).impossible());
+        assertFalse(window.sample(vehicle, true, 64.35, 0.08, 0.98f, now += 50).impossible());
+        assertFalse(window.sample(vehicle, true, 64.70, 0.08, 0.98f, now += 50).impossible());
+        assertFalse(window.sample(vehicle, true, 65.05, 0.08, 0.98f, now += 50).impossible());
+        assertTrue(window.sample(vehicle, true, 65.40, 0.08, 0.98f, now += 50).impossible());
+    }
+
+    @Test void vanillaLivingVehicleFallRecurrenceStaysLegal() {
+        var window = new VehicleMovementCheck.LivingVehicleAirWindow();
+        var vehicle = java.util.UUID.randomUUID();
+        long now = 2_000;
+        double y = 70.0;
+        double dy = 0.30;
+
+        assertFalse(window.sample(vehicle, true, y, 0.08, 0.98f, now).impossible());
+        y += dy;
+        assertFalse(window.sample(vehicle, true, y, 0.08, 0.98f, now += 50).impossible());
+
+        for (int tick = 0; tick < 8; tick++) {
+            dy = (dy - 0.08) * (double) 0.98f;
+            y += dy;
+            assertFalse(window.sample(vehicle, true, y, 0.08, 0.98f, now += 50).impossible());
+        }
+    }
+
+    @Test void liquidBounceVehicleGlideConstantDescentAlsoDiverges() {
+        var window = new VehicleMovementCheck.LivingVehicleAirWindow();
+        var vehicle = java.util.UUID.randomUUID();
+        long now = 3_000;
+        double y = 70.0;
+
+        assertFalse(window.sample(vehicle, true, y, 0.08, 0.98f, now).impossible());
+        for (int tick = 0; tick < 4; tick++) {
+            y -= 0.15;
+            var finding = window.sample(vehicle, true, y, 0.08, 0.98f, now += 50);
+            if (tick < 3) assertFalse(finding.impossible());
+            else assertTrue(finding.impossible());
+        }
+    }
+
+    @Test void queuedVehiclePacketResetsVerticalRecurrenceEvidence() {
+        var window = new VehicleMovementCheck.LivingVehicleAirWindow();
+        var vehicle = java.util.UUID.randomUUID();
+
+        window.sample(vehicle, true, 64.0, 0.08, 0.98f, 1_000);
+        window.sample(vehicle, true, 64.35, 0.08, 0.98f, 1_050);
+        assertFalse(window.sample(vehicle, true, 64.36, 0.08, 0.98f, 1_055).impossible());
+        assertFalse(window.sample(vehicle, true, 64.70, 0.08, 0.98f, 1_105).impossible());
+    }
+
 }
