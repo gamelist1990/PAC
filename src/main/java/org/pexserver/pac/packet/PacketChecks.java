@@ -29,6 +29,7 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerVelocityEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.player.PlayerRiptideEvent;
+import org.bukkit.event.player.PlayerFishEvent;
 
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -90,6 +91,32 @@ public final class PacketChecks implements PacketListener, Listener {
     public void onCombatDamage(EntityDamageByEntityEvent event) {
         if (event.getFinalDamage() <= 0 || !(event.getEntity() instanceof org.bukkit.entity.Player player)) return;
         externalMotion.markCombatDamage(player.getUniqueId(), System.currentTimeMillis());
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onFishingPull(PlayerFishEvent event) {
+        if (event.getState() != PlayerFishEvent.State.CAUGHT_ENTITY
+                || !(event.getCaught() instanceof org.bukkit.entity.Player target)
+                || event.getHook() == null) return;
+        var owner = event.getPlayer().getLocation();
+        var hook = event.getHook().getLocation();
+        MotionPredictor.Motion impulse = fishingPull(owner.getX(), owner.getY(), owner.getZ(),
+                hook.getX(), hook.getY(), hook.getZ());
+        if (Math.abs(impulse.dx()) + Math.abs(impulse.dy()) + Math.abs(impulse.dz()) <= 1.0e-8)
+            return;
+        // Paper fires CAUGHT_ENTITY immediately before NMS FishingHook#pullEntity
+        // and then broadcasts entity status 31 so the local target applies the
+        // exact same additive pull. Tracking it as additive motion lets the
+        // existing knockback-response replay distinguish the legitimate pull
+        // from clients that suppress only the local entity-status effect.
+        externalMotion.addImpulse(target.getUniqueId(),
+                impulse.dx(), impulse.dy(), impulse.dz(), System.currentTimeMillis());
+    }
+
+    static MotionPredictor.Motion fishingPull(double ownerX, double ownerY, double ownerZ,
+                                              double hookX, double hookY, double hookZ) {
+        return new MotionPredictor.Motion((ownerX - hookX) * 0.1,
+                (ownerY - hookY) * 0.1, (ownerZ - hookZ) * 0.1);
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
