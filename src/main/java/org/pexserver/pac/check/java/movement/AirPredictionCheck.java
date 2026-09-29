@@ -122,7 +122,7 @@ public final class AirPredictionCheck extends AbstractCheck implements PacketChe
                     location.getYaw(), location.getPitch(), elytraEnvironment,
                     context.plugin().environment().collisions(context.uuid()), motionImpulse, now);
             if (elytraEnvironment == null || !elytraEnvironment.gliding()
-                    || elytraEnvironment.fireworkBoost() || motionImpulse != null) {
+                    || motionImpulse != null) {
                 state.elytraBuffer = 0;
             } else if (context.flying().hasPositionChanged() && elytraSample.evaluated()) {
                 double elytraThreshold = context.plugin().elytraOffsetThreshold();
@@ -133,8 +133,9 @@ public final class AirPredictionCheck extends AbstractCheck implements PacketChe
                 if (state.elytraBuffer >= context.plugin().elytraBufferThreshold()) {
                     state.elytraBuffer = context.plugin().elytraBufferThreshold() * 0.5;
                     flagLimited(context, () -> String.format(Locale.ROOT,
-                            "Elytra physics residual horizontal=%.3f vertical=%.3f",
-                            elytraSample.horizontalOffset(), elytraSample.verticalOffset()));
+                            "Elytra physics residual horizontal=%.3f vertical=%.3f firework=%s",
+                            elytraSample.horizontalOffset(), elytraSample.verticalOffset(),
+                            elytraEnvironment.fireworkBoost()));
                     AirMotionSequence.Position rollback = previousElytra == null ? state.sequence.lastPosition()
                             : new AirMotionSequence.Position(previousElytra.x(), previousElytra.y(), previousElytra.z());
                     correct(context, state, rollback, state.sequence.motion(),
