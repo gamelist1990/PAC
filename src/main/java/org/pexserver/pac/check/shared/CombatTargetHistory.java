@@ -12,7 +12,6 @@ import java.util.concurrent.ConcurrentHashMap;
  * target motion instead of granting extra geometric reach from a reported ping value.
  */
 final class CombatTargetHistory {
-    static final long MAX_REWIND_MILLIS = 250;
     private static final long RETENTION_MILLIS = 750;
     private static final int MAX_FRAMES = 24;
 
@@ -56,7 +55,9 @@ final class CombatTargetHistory {
     }
 
     static long trustedRewindMillis(int reportedPingMillis) {
-        if (reportedPingMillis <= 0) return 0;
-        return Math.min(MAX_REWIND_MILLIS, reportedPingMillis / 2L);
+        // Keepalive/ping RTT is client-influenceable and is therefore not a
+        // trusted estimate of ATTACK packet age. Reach uses the server receive
+        // timestamp and bounded tick history instead.
+        return 0;
     }
 }
