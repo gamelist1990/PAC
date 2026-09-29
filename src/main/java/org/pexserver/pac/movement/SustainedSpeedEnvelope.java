@@ -29,6 +29,7 @@ public final class SustainedSpeedEnvelope {
     private double externalMomentumBound;
     private double previousHorizontalSpeed;
     private boolean previousGround;
+    private boolean serverVelocityActive;
     private GroundMotionSequence.Position suspiciousAnchor;
 
     /** Seed the ceiling from a velocity chosen by the server, before the client responds. */
@@ -45,8 +46,18 @@ public final class SustainedSpeedEnvelope {
         // from zero makes an AirDash tail collapse toward the ordinary speed
         // cap too early, especially when it lands on ice.
         previousHorizontalSpeed = horizontalSpeed;
+        serverVelocityActive = true;
         suspendedUntilNanos = nowNanos + EXTERNAL_MOTION_HOLD_NANOS;
         baseline(x, y, z, nowNanos);
+    }
+
+    /**
+     * The grant lifetime is owned by PacketChecks. Ending it stops the special
+     * uncertain-snapshot hold, but deliberately keeps the already modeled
+     * momentum so ordinary drag/input can carry it forward.
+     */
+    public void endServerVelocity() {
+        serverVelocityActive = false;
     }
 
     public Sample accept(double nextX, double nextY, double nextZ,
@@ -93,6 +104,22 @@ public final class SustainedSpeedEnvelope {
             return Sample.skipped();
         }
         if (!trusted) {
+            // A plugin/server velocity can move the client farther than the
+            // main-thread snapshot's normal near() window before that snapshot
+            // catches up. Do not erase the authoritative launch merely because
+            // this one environment sample cannot yet classify ground vs air.
+            // We also do not learn extra momentum from the untrusted frame.
+            boolean authorizedVelocityGap = serverVelocityActive && initialized
+                    && environment != null && fresh
+                    && nowNanos >= lastAtNanos
+                    && nowNanos - lastAtNanos <= MAX_SAMPLE_GAP_NANOS;
+            if (authorizedVelocityGap) {
+                evidence.reset();
+                suspiciousAnchor = null;
+                baseline(nextX, nextY, nextZ, nowNanos);
+                return Sample.skipped();
+            }
+
             // Ground state can briefly be unknown while a low hop changes the
             // server's ground/air sample. Keep the last trusted anchor across
             // that short gap and judge the aggregate displacement on the next
@@ -255,6 +282,7 @@ public final class SustainedSpeedEnvelope {
         externalMomentumBound = 0;
         previousHorizontalSpeed = 0;
         previousGround = false;
+        serverVelocityActive = false;
     }
 
     private enum VerticalTransition { NONE, STEP, JUMP }
