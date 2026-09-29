@@ -120,6 +120,8 @@ public final class VehicleMovementCheck extends AbstractCheck implements EventCh
                                          boolean gravity, boolean airborne, boolean inWater,
                                          boolean serverControlled, boolean strictLivingAir,
                                          double livingGravity, float livingVerticalDrag,
+                                         boolean strictLivingHorizontal,
+                                         double riddenSpeedUpper, float livingGroundFriction,
                                          long sampledAt) { }
 
     record VehiclePacketFinding(boolean evaluated, boolean impossible,
@@ -343,6 +345,18 @@ public final class VehicleMovementCheck extends AbstractCheck implements EventCh
             return plugin.cancel(this, uuid);
         }
 
+        double dx = targetX - state.x();
+        double dz = targetZ - state.z();
+        double horizontal = Math.hypot(dx, dz);
+        double strictHorizontal = livingHorizontalLimit(state, now);
+        if (Double.isFinite(strictHorizontal) && horizontal > strictHorizontal) {
+            flagLimited(uuid, () -> plugin.flag(uuid, this, String.format(java.util.Locale.ROOT,
+                    "vanilla ridden horizontal envelope exceeded: type=%s horizontal=%.3f legal=%.3f speed=%.3f friction=%.3f",
+                    state.type(), horizontal, strictHorizontal,
+                    state.riddenSpeedUpper(), state.livingGroundFriction())));
+            return plugin.cancel(this, uuid);
+        }
+
         VehiclePacketFinding finding = packetFinding(
                 state.x(), state.y(), state.z(),
                 state.velocityX(), state.velocityY(), state.velocityZ(),
@@ -354,6 +368,61 @@ public final class VehicleMovementCheck extends AbstractCheck implements EventCh
                 finding.type(), finding.horizontal(), finding.legalHorizontal(),
                 finding.vertical(), finding.legalVertical())));
         return plugin.cancel(this, uuid);
+    }
+
+    private static double livingHorizontalLimit(PacketVehicleSnapshot state, long now) {
+        if (state == null || !state.strictLivingHorizontal()
+                || !Double.isFinite(state.riddenSpeedUpper())
+                || !Float.isFinite(state.livingGroundFriction())
+                || now < state.sampledAt() || now - state.sampledAt() > 75)
+            return Double.NaN;
+        return livingHorizontalLimit(
+                Math.hypot(state.velocityX(), state.velocityZ()),
+                state.riddenSpeedUpper(), state.livingGroundFriction());
+    }
+
+    static double livingHorizontalLimit(double velocityHorizontal,
+                                        double riddenSpeedUpper,
+                                        float groundFriction) {
+        if (!Double.isFinite(velocityHorizontal) || velocityHorizontal < 0
+                || !Double.isFinite(riddenSpeedUpper) || riddenSpeedUpper < 0
+                || !Float.isFinite(groundFriction)
+                || groundFriction < 0.05f || groundFriction > 1.25f)
+            return Double.NaN;
+        double frictionCubed = groundFriction * groundFriction * groundFriction;
+        double acceleration = riddenSpeedUpper * (0.21600002 / frictionCubed);
+        // Position is advanced before the post-move friction is applied.
+        // Add a small packet/interpolation allowance instead of multiplying the
+        // entire envelope by a large generic factor.
+        return velocityHorizontal + acceleration + 0.085;
+    }
+
+    private static double riddenSpeedUpper(LivingEntity living, String type) {
+        var speed = living.getAttribute(Attribute.MOVEMENT_SPEED);
+        double base = speed == null ? Double.NaN : speed.getValue();
+        if (!Double.isFinite(base) || base < 0 || base > 16 || type == null)
+            return Double.NaN;
+        return switch (type) {
+            case "HORSE", "DONKEY", "MULE", "SKELETON_HORSE", "ZOMBIE_HORSE" -> base;
+            // ItemBasedSteering#boostFactor peaks at 1 + 1.15 = 2.15.
+            case "PIG" -> base * 0.225 * 2.15;
+            case "STRIDER" -> base * 0.55 * 2.15;
+            default -> Double.NaN;
+        };
+    }
+
+    private static float vehicleGroundFriction(LivingEntity living) {
+        if (!(living instanceof CraftEntity craft)) return Float.NaN;
+        var handle = craft.getHandle();
+        var frictionAttribute = living.getAttribute(Attribute.FRICTION_MODIFIER);
+        double modifier = frictionAttribute == null ? Double.NaN : frictionAttribute.getValue();
+        if (!Double.isFinite(modifier) || modifier < 0 || modifier > 16)
+            return Float.NaN;
+        var pos = handle.getBlockPosBelowThatAffectsMyMovement();
+        float raw = handle.level().getBlockState(pos).getBlock().getFriction();
+        if (!Float.isFinite(raw) || raw < 0 || raw > 2) return Float.NaN;
+        return Math.max(0.0f, Math.min(1.0f,
+                1.0f - (1.0f - raw) * (float) modifier));
     }
 
     static VehiclePacketFinding packetFinding(double serverX, double serverY, double serverZ,
@@ -400,6 +469,9 @@ public final class VehicleMovementCheck extends AbstractCheck implements EventCh
             double livingGravity = Double.NaN;
             float livingVerticalDrag = Float.NaN;
             boolean strictLivingAir = false;
+            boolean strictLivingHorizontal = false;
+            double riddenSpeedUpper = Double.NaN;
+            float livingGroundFriction = Float.NaN;
             if (vehicle instanceof LivingEntity living) {
                 var gravityAttribute = living.getAttribute(Attribute.GRAVITY);
                 var dragAttribute = living.getAttribute(Attribute.AIR_DRAG_MODIFIER);
@@ -416,6 +488,13 @@ public final class VehicleMovementCheck extends AbstractCheck implements EventCh
                             && !living.isOnGround() && !living.isInWater()
                             && !living.isInLava() && !living.isClimbing();
                 }
+                String vehicleType = vehicle.getType().name();
+                riddenSpeedUpper = riddenSpeedUpper(living, vehicleType);
+                livingGroundFriction = vehicleGroundFriction(living);
+                strictLivingHorizontal = serverControlled && living.isOnGround()
+                        && !living.isInWater() && !living.isInLava() && !living.isClimbing()
+                        && Double.isFinite(riddenSpeedUpper)
+                        && Float.isFinite(livingGroundFriction);
             } else if (vehicle instanceof Minecart minecart) {
                 // Vanilla 26.2 minecarts use 0.04 gravity and multiply
                 // off-rail airborne velocity by the configurable Bukkit flying
@@ -436,7 +515,9 @@ public final class VehicleMovementCheck extends AbstractCheck implements EventCh
                     vehicle.hasGravity(),
                     vehicle.hasGravity() && !vehicle.isOnGround() && !vehicle.isInWater(),
                     vehicle.isInWater(), serverControlled, strictLivingAir,
-                    livingGravity, livingVerticalDrag, System.currentTimeMillis()));
+                    livingGravity, livingVerticalDrag,
+                    strictLivingHorizontal, riddenSpeedUpper, livingGroundFriction,
+                    System.currentTimeMillis()));
 
             if (vehicle instanceof Boat) continue;
             UUID vehicleId = vehicle.getUniqueId();
