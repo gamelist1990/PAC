@@ -48,6 +48,7 @@ public final class SurfacePredictionCheck extends AbstractCheck implements Packe
             case WALL_CLIMB -> "sustained wall climb without climbable support";
             case LIQUID_GROUND_CLAIM -> "repeated on-ground claim over unsupported liquid";
             case POWDER_SNOW_WALK -> "repeated on-ground claim while walking on powder snow without leather boots";
+            case AIR_GROUND_CLAIM -> "repeated on-ground claim while server collision state confirms unsupported air";
             case NONE -> "";
         };
         flagLimited(context, detail);
