@@ -173,7 +173,8 @@ public final class MultiStepMotionPredictor {
                 double moveX = moves.x(moveIndex), moveY = moves.y(moveIndex), moveZ = moves.z(moveIndex);
                 double offset = Math.hypot(actualX - moveX, actualZ - moveZ);
                 if (best == null || offset < best.offset()) best = new Result(offset,
-                        new MotionPredictor.Motion(moveX, moveY, moveZ));
+                        postBlockSpeed(new MotionPredictor.Motion(moveX, moveY, moveZ),
+                                environment, true));
             }
         }
         return best;
@@ -291,7 +292,8 @@ public final class MultiStepMotionPredictor {
                         ? collision.blockGeometryComplete() : collision.complete())) return null;
                 entityPushAllowance = Math.max(entityPushAllowance, collision.entityPushHorizontalAllowance());
             }
-            futureCollisionBoundsTrusted &= collision != null && collision.blockGeometryComplete();
+            futureCollisionBoundsTrusted &= collision != null && collision.blockGeometryComplete()
+                    && (!ground || environment.blockSpeedFactor() <= 1.0f);
         }
 
         int beamLimit = MAX_BEAM;
@@ -369,10 +371,12 @@ public final class MultiStepMotionPredictor {
                                     nextX, nextY, nextZ, scoreVertical, entityPushAllowance);
                             if (offset < bestOffset) {
                                 bestOffset = offset;
-                                best = new Path(nextX, nextY, nextZ, new MotionPredictor.Motion(
-                                        moveX == velocity.dx() ? velocity.dx() : 0,
-                                        moveY == velocity.dy() ? velocity.dy() : 0,
-                                        moveZ == velocity.dz() ? velocity.dz() : 0));
+                                best = new Path(nextX, nextY, nextZ, postBlockSpeed(
+                                        new MotionPredictor.Motion(
+                                                moveX == velocity.dx() ? velocity.dx() : 0,
+                                                moveY == velocity.dy() ? velocity.dy() : 0,
+                                                moveZ == velocity.dz() ? velocity.dz() : 0),
+                                        environment, ground));
                             }
                         } else {
                             double distance = displacementOffset(actualX, actualY, actualZ,
@@ -390,8 +394,10 @@ public final class MultiStepMotionPredictor {
                             if (comparedToWorst == 0 && worst != null)
                                 comparedToWorst = Long.compare(order, worst.order());
                             if (expanded.size() < beamLimit || worst != null && comparedToWorst < 0) {
-                                MotionPredictor.Motion nextVelocity = new MotionPredictor.Motion(nextDx,
-                                        moveY == velocity.dy() ? velocity.dy() : 0, nextDz);
+                                MotionPredictor.Motion nextVelocity = postBlockSpeed(
+                                        new MotionPredictor.Motion(nextDx,
+                                                moveY == velocity.dy() ? velocity.dy() : 0, nextDz),
+                                        environment, ground);
                                 Path next = new Path(nextX, nextY, nextZ, nextVelocity);
                                 // Different inputs can collapse to the exact same state at a wall.
                                 // Keep one copy so duplicates cannot consume the whole search beam.
@@ -502,12 +508,22 @@ public final class MultiStepMotionPredictor {
             x += chosenX;
             y += chosenY;
             z += chosenZ;
-            velocity = new MotionPredictor.Motion(
+            velocity = postBlockSpeed(new MotionPredictor.Motion(
                     chosenX == chosenWanted.dx() ? chosenWanted.dx() : 0,
                     chosenY == chosenWanted.dy() ? chosenWanted.dy() : 0,
-                    chosenZ == chosenWanted.dz() ? chosenWanted.dz() : 0);
+                    chosenZ == chosenWanted.dz() ? chosenWanted.dz() : 0),
+                    frame.environment(), ground);
         }
         return new CandidateReplay(new Path(x, y, z, velocity), unambiguous);
+    }
+
+    private static MotionPredictor.Motion postBlockSpeed(MotionPredictor.Motion motion,
+                                                          MotionEnvironment.Snapshot environment,
+                                                          boolean ground) {
+        if (!ground || motion == null || environment == null) return motion;
+        float factor = environment.blockSpeedFactor();
+        if (!Float.isFinite(factor) || factor < 0 || factor > 4) factor = 1.0f;
+        return new MotionPredictor.Motion(motion.dx() * factor, motion.dy(), motion.dz() * factor);
     }
 
     private static MotionPredictor.Motion predictInputMotion(MotionPredictor.Motion previous, Frame frame,

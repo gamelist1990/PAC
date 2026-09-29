@@ -12,8 +12,11 @@ import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientCl
 import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientCloseWindow;
 import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientPlayerInput;
 import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientTeleportConfirm;
+import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientVehicleMove;
 import org.pexserver.pac.PacPlugin;
+import org.pexserver.pac.check.shared.ExploitActionCheck;
 import org.pexserver.pac.check.shared.KillAuraCheck;
+import org.pexserver.pac.check.shared.VehicleMovementCheck;
 import org.pexserver.pac.check.java.packet.CriticalPacketCheck;
 import org.pexserver.pac.check.java.packet.PacketFloodCheck;
 import org.pexserver.pac.check.java.movement.TimerPredictionCheck;
@@ -27,6 +30,8 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerVelocityEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
+import org.bukkit.event.player.PlayerRiptideEvent;
+import org.bukkit.event.player.PlayerFishEvent;
 
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -90,6 +95,50 @@ public final class PacketChecks implements PacketListener, Listener {
         externalMotion.markCombatDamage(player.getUniqueId(), System.currentTimeMillis());
     }
 
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onFishingPull(PlayerFishEvent event) {
+        if (event.getState() != PlayerFishEvent.State.CAUGHT_ENTITY
+                || !(event.getCaught() instanceof org.bukkit.entity.Player target)
+                || event.getHook() == null) return;
+        var owner = event.getPlayer().getLocation();
+        var hook = event.getHook().getLocation();
+        MotionPredictor.Motion impulse = fishingPull(owner.getX(), owner.getY(), owner.getZ(),
+                hook.getX(), hook.getY(), hook.getZ());
+        if (Math.abs(impulse.dx()) + Math.abs(impulse.dy()) + Math.abs(impulse.dz()) <= 1.0e-8)
+            return;
+        // Paper fires CAUGHT_ENTITY immediately before NMS FishingHook#pullEntity
+        // and then broadcasts entity status 31 so the local target applies the
+        // exact same additive pull. Tracking it as additive motion lets the
+        // existing knockback-response replay distinguish the legitimate pull
+        // from clients that suppress only the local entity-status effect.
+        externalMotion.addImpulse(target.getUniqueId(),
+                impulse.dx(), impulse.dy(), impulse.dz(), System.currentTimeMillis());
+    }
+
+    static MotionPredictor.Motion fishingPull(double ownerX, double ownerY, double ownerZ,
+                                              double hookX, double hookY, double hookZ) {
+        return new MotionPredictor.Motion((ownerX - hookX) * 0.1,
+                (ownerY - hookY) * 0.1, (ownerZ - hookZ) * 0.1);
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onRiptide(PlayerRiptideEvent event) {
+        UUID uuid = event.getPlayer().getUniqueId();
+        if (!(plugin.checks().get("air-prediction") instanceof AirPredictionCheck airPrediction)
+                || !plugin.enabled(uuid, airPrediction) || plugin.isExempt(uuid)) return;
+        var origin = event.getPlayer().getLocation();
+        var prior = event.getPlayer().getVelocity();
+        var impulse = event.getVelocity();
+        // Paper fires PlayerRiptideEvent immediately before Player#push with
+        // this exact vanilla impulse. The client performs the riptide locally,
+        // so retain the server's unmodified final velocity as the authority.
+        airPrediction.onRiptide(uuid, origin.getX(), origin.getY(), origin.getZ(),
+                prior.getX() + impulse.getX(),
+                prior.getY() + impulse.getY(),
+                prior.getZ() + impulse.getZ(),
+                System.currentTimeMillis());
+    }
+
     /**
      * Capture Bukkit API velocity changes as well as their eventual network packet.
      * Some plugins change velocity through the event pipeline, so the authoritative
@@ -130,6 +179,11 @@ public final class PacketChecks implements PacketListener, Listener {
 
     @Override public void onPacketReceive(PacketReceiveEvent event) {
         UUID eventUuid = event.getUser().getUUID();
+        if (eventUuid != null && !plugin.isBedrockPlayer(eventUuid)
+                && plugin.checks().get("packet-flood") instanceof PacketFloodCheck flood
+                && flood.inspectDecodedPacket(plugin, eventUuid, event, System.nanoTime())) {
+            return;
+        }
         if (eventUuid != null && !plugin.isBedrockPlayer(eventUuid) && plugin.environment() != null) {
             ClientVersion version = event.getUser().getClientVersion();
             if (version != null && version != ClientVersion.UNKNOWN) {
@@ -170,6 +224,21 @@ public final class PacketChecks implements PacketListener, Listener {
                 handleAttackPacket(event, uuid, interaction.getEntityId());
             return;
         }
+        if (event.getPacketType() == PacketType.Play.Client.VEHICLE_MOVE) {
+            UUID uuid = eventUuid;
+            if (uuid == null || plugin.isExempt(uuid)) return;
+            if (plugin.checks().get("vehicle-movement") instanceof VehicleMovementCheck vehicleMovement
+                    && plugin.enabled(uuid, vehicleMovement)) {
+                var packet = new WrapperPlayClientVehicleMove(event);
+                var position = packet.getPosition();
+                if (vehicleMovement.onVehicleMovePacket(uuid,
+                        position.getX(), position.getY(), position.getZ(),
+                        System.currentTimeMillis())) {
+                    event.setCancelled(true);
+                }
+            }
+            return;
+        }
         if (event.getPacketType() == PacketType.Play.Client.TELEPORT_CONFIRM) {
             UUID uuid = event.getUser().getUUID();
             if (uuid != null) plugin.environment().teleportConfirmed(uuid,
@@ -199,6 +268,15 @@ public final class PacketChecks implements PacketListener, Listener {
         UUID uuid = eventUuid;
         if (uuid == null || plugin.isExempt(uuid)) return;
         WrapperPlayClientPlayerFlying flying = new WrapperPlayClientPlayerFlying(event);
+        if (plugin.checks().get("exploit-actions") instanceof ExploitActionCheck exploitActions
+                && plugin.enabled(uuid, exploitActions)) {
+            var movement = flying.getLocation();
+            if (exploitActions.onMovementPacket(uuid, flying.hasPositionChanged(),
+                    movement.getX(), movement.getY(), movement.getZ())) {
+                event.setCancelled(true);
+                return;
+            }
+        }
         long now = System.currentTimeMillis();
         var externalUpdates = externalMotion.since(uuid,
                 motionSequencesDelivered.getOrDefault(uuid, 0L), now);

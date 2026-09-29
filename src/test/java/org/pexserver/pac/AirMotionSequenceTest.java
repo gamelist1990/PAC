@@ -91,6 +91,48 @@ class AirMotionSequenceTest {
         assertFalse(third.evaluated());
     }
 
+    @Test void liquidBounceAirJumpCreatesVerticalPredictionResidual() {
+        var sequence = new AirMotionSequence();
+        sequence.accept(true, 0, 70, 0, air(1, 0, 70), 1050);
+        sequence.accept(true, 0, 69.92, 0, air(2, 0, 69.92), 1100);
+
+        var jump = sequence.accept(true, 0, 70.34, 0,
+                air(3, 0, 70.34), 1150);
+
+        assertTrue(jump.evaluated());
+        assertTrue(jump.offset() > 0.06,
+                "a fresh 0.42Y jump while already airborne cannot follow the vanilla gravity recurrence");
+    }
+
+    @Test void liquidBounceReverseStepStrictMotionCreatesVerticalResidual() {
+        var sequence = new AirMotionSequence();
+        sequence.accept(true, 0, 70, 0, air(1, 0, 70), 1050);
+        sequence.accept(true, 0, 69.92, 0, air(2, 0, 69.92), 1100);
+
+        var reverseStep = sequence.accept(true, 0, 68.92, 0,
+                air(3, 0, 68.92), 1150);
+
+        assertTrue(reverseStep.evaluated());
+        assertTrue(reverseStep.offset() > 0.06,
+                "ReverseStep Strict's default -1.0Y displacement must diverge from vanilla gravity");
+    }
+
+    @Test void ignoringLevitationCreatesVerticalPredictionResidual() {
+        var sequence = new AirMotionSequence();
+        double firstY = 70;
+        double secondY = 69.9;
+        sequence.accept(true, 0, firstY, 0, levitationAir(1, firstY), 1050);
+        sequence.accept(true, 0, secondY, 0, levitationAir(2, secondY), 1100);
+
+        double ignoredEffectY = secondY + AirPredictor.nextDisplacement(-0.1);
+        var ignored = sequence.accept(true, 0, ignoredEffectY, 0,
+                levitationAir(3, ignoredEffectY), 1150);
+
+        assertTrue(ignored.evaluated());
+        assertTrue(ignored.offset() > 0.06,
+                "AntiLevitation must not fit the server's active levitation recurrence");
+    }
+
     @Test void ordinaryFallingMatchesAfterBaseline() {
         var sequence = new AirMotionSequence();
         sequence.accept(true, 0, 70, 0, air(1, 0, 70), 1050);

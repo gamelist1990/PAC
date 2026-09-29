@@ -36,7 +36,7 @@ public final class CheckSettings {
                 case "crash-chest", "scaffold", "reach", "critical-packet", "inventory-move", "invalid-movement", "invalid-pitch",
                         "packet-flood", "nuker", "anti-hunger", "motion-prediction", "air-prediction", "timer-prediction",
                         "surface-prediction", "water-flow-prediction", "water-motion-prediction", "noclip",
-                        "boat-flight", "kill-aura" -> true;
+                        "boat-flight", "vehicle-movement", "kill-aura" -> true;
                 default -> false;
             };
             cancel.put(module.key(), config.getBoolean(path + ".cancel", defaultCancel));

@@ -112,7 +112,22 @@ public final class MotionPredictor {
                                                    float blockFriction, float horizontalDrag,
                                                    float sneakingSpeed, float itemUseMultiplier,
                                                    int frames) {
+        return maximumGroundTravelClient(previous, movementSpeed, blockFriction, horizontalDrag,
+                sneakingSpeed, itemUseMultiplier, 1.0f, frames);
+    }
+
+    /**
+     * Conservative ground travel across omitted position packets. Minecraft applies
+     * the block speed factor after each move, so it changes the velocity carried
+     * into the following tick without shrinking the displacement that already happened.
+     */
+    public static double maximumGroundTravelClient(Motion previous, double movementSpeed,
+                                                   float blockFriction, float horizontalDrag,
+                                                   float sneakingSpeed, float itemUseMultiplier,
+                                                   float blockSpeedFactor, int frames) {
         int count = Math.max(1, Math.min(40, frames));
+        double factor = Float.isFinite(blockSpeedFactor)
+                ? Math.max(0.0, Math.min(4.0, blockSpeedFactor)) : 1.0;
         double speed = Math.hypot(previous.dx(), previous.dz());
         double retention = blockFriction * horizontalDrag;
         double acceleration = groundAcceleration(movementSpeed, blockFriction)
@@ -121,6 +136,7 @@ public final class MotionPredictor {
         for (int i = 0; i < count; i++) {
             speed = speed * retention + acceleration;
             distance += speed;
+            speed *= factor;
         }
         return distance;
     }

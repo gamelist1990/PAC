@@ -38,16 +38,22 @@ public final class SurfacePredictionCheck extends AbstractCheck implements Packe
             boolean unsupportedPowderSnow = !context.plugin().isBedrockPlayer(context.uuid())
                     && powderSnow != null && powderSnow.unauthorized()
                     && powderSnow.near(location.getX(), location.getY(), location.getZ(), now);
+            var climb = context.plugin().environment().climb(context.uuid());
             anomaly = state.accept(context.flying().hasPositionChanged(),
                     location.getX(), location.getY(), location.getZ(),
                     context.flying().isOnGround(),
-                    context.plugin().environment().get(context.uuid()), unsupportedPowderSnow, now);
+                    context.plugin().environment().get(context.uuid()), unsupportedPowderSnow,
+                    climb, now);
         }
         if (anomaly == SurfaceMotionSequence.Anomaly.NONE) return;
         String detail = switch (anomaly) {
             case WALL_CLIMB -> "sustained wall climb without climbable support";
+            case WALL_CLIP -> "impossible wall-adjacent vertical clip";
+            case CLIMB_SPEED -> "sustained climbable ascent above vanilla vertical limit";
+            case CLIMB_CLIP -> "impossible climbable vertical clip";
             case LIQUID_GROUND_CLAIM -> "repeated on-ground claim over unsupported liquid";
             case POWDER_SNOW_WALK -> "repeated on-ground claim while walking on powder snow without leather boots";
+            case AIR_GROUND_CLAIM -> "repeated on-ground claim while server collision state confirms unsupported air";
             case NONE -> "";
         };
         flagLimited(context, detail);

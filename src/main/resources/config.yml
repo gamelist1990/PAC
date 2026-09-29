@@ -2,7 +2,7 @@ alerts:
   enabled: true
   prefix: '&8[&cPAC&8] &7'
   minimum-interval-ms: 1000
-config-version: 15
+config-version: 17
 api:
   # External plugins can only change PAC settings when this is true.
   control-authority: false
@@ -14,7 +14,7 @@ killaura:
   # MX's default keeps its cinematic-sensitive modules active unless explicitly ignored.
   ignore-cinematic: false
 detectors:
-  # Standard detectors start enabled and eligible for automatic BAN; experimental xray/noclip start disabled.
+  # Standard detectors start enabled. Xray remains opt-in; noclip prevention is enabled but does not auto-BAN by default.
   # Set ban-enabled: false on an individual detector to disable its automatic BAN.
   # Each detector also accepts kick-enabled: false and kick-score-threshold: 10.
   # Enable kicks per detector from /pac ui; bedrock-prediction does not auto-kick.
@@ -27,7 +27,10 @@ detectors:
     enabled: true
     ban-enabled: true
     cancel: true
+    # Tight movement-simulation limit plus a separate high-ceiling guard for
+    # all decoded Play packets. The latter is DoS protection, not timer evidence.
     max-per-second: 240
+    max-decoded-per-second: 1200
     alert-score-threshold: 3
   invalid-pitch:
     enabled: true
@@ -80,6 +83,13 @@ detectors:
     hover-ticks: 8
     fast-ticks: 4
     alert-score-threshold: 1
+  vehicle-movement:
+    # Post-dismount VehicleBoost is rejected. Generic non-boat vehicle anomalies
+    # are alert-only because servers may intentionally implement custom vehicles.
+    enabled: true
+    ban-enabled: false
+    cancel: true
+    alert-score-threshold: 1
   fast-place:
     enabled: true
     ban-enabled: true
@@ -115,6 +125,16 @@ detectors:
   crash-chest:
     enabled: true
     ban-enabled: true
+    cancel: true
+    alert-score-threshold: 1
+    kick-enabled: false
+    kick-score-threshold: 10
+  exploit-actions:
+    # MultiActions/VehicleOneHit prevention. Automatic punishments stay off by
+    # default because custom gameplay plugins may intentionally permit unusual
+    # action combinations; impossible actions are still cancelled when enabled.
+    enabled: true
+    ban-enabled: false
     cancel: true
     alert-score-threshold: 1
     kick-enabled: false
@@ -164,15 +184,16 @@ detectors:
     suspicion-threshold: 18
     rare-jump-distance: 10
   noclip:
-    # Experimental swept-AABB wall-phase check; enable manually from /pac ui.
-    enabled: false
-    ban-enabled: true
+    # Swept-AABB prevention for Phase/Clip. Movement is blocked immediately,
+    # while automatic bans remain disabled until enough production evidence is collected.
+    enabled: true
+    ban-enabled: false
     cancel: true
     alert-score-threshold: 1
     kick-enabled: false
     kick-score-threshold: 10
     phase-flags-required: 5
-    collision-tolerance: 0.10
+    collision-tolerance: 0.03
     max-distance: 10
   simulation-killaura:
     # Java-only block collision replay for attacks that cannot reach a target through vanilla geometry.
