@@ -164,15 +164,16 @@ detectors:
     suspicion-threshold: 18
     rare-jump-distance: 10
   noclip:
-    # Experimental swept-AABB wall-phase check; enable manually from /pac ui.
-    enabled: false
+    # Swept-AABB wall/phase prevention. Repeated evidence is required before scoring,
+    # but each confirmed penetration segment is rejected when cancel is enabled.
+    enabled: true
     ban-enabled: true
     cancel: true
     alert-score-threshold: 1
     kick-enabled: false
     kick-score-threshold: 10
     phase-flags-required: 5
-    collision-tolerance: 0.10
+    collision-tolerance: 0.03
     max-distance: 10
   simulation-killaura:
     # Java-only block collision replay for attacks that cannot reach a target through vanilla geometry.
