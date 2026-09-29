@@ -120,7 +120,8 @@ public final class MotionPredictionCheck extends AbstractCheck implements Packet
             if (!glideSettling) {
                 state.glideHorizontalSpeed = 0;
             }
-            if (context.timingUncertain()) {
+            if (context.timingUncertain() || context.serverTiming().delayed()
+                    || context.plugin().environment().pingMillis(context.uuid()) >= 100) {
                 var impulse = context.externalImpulse();
                 if (impulse != null && impulse.sequence() != state.pendingImpulseSequence) {
                     state.pendingImpulseSequence = impulse.sequence();

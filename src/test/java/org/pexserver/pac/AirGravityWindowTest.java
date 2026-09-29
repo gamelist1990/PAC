@@ -7,6 +7,38 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 class AirGravityWindowTest {
+    @Test void jitteredCoordinatePacketsRemainSinglePhysicsSteps() {
+        var window = new AirGravityWindow();
+        double y = 64, dy = 0;
+        long now = 1000;
+        for (int tick = 0; tick < 30; tick++) {
+            assertFalse(window.packet(true, true, y, 0.08, 0.98f, now));
+            dy = (dy - 0.08) * 0.98f;
+            y += dy;
+            now += tick % 2 == 0 ? 83 : 17;
+        }
+    }
+
+    @Test void positionlessFramesAreCountedAndIneligibleOnesBreakContinuity() {
+        var window = new AirGravityWindow();
+        double y = 80, dy = 0.42;
+        for (int tick = 0; tick < 20; tick++) {
+            assertFalse(window.packet(true, tick % 3 == 0, y, 0.08, 0.98f, 1000 + tick));
+            dy = (dy - 0.08) * 0.98f;
+            y += dy;
+        }
+        assertFalse(window.packet(false, false, y, 0.08, 0.98f, 1020));
+        assertFalse(window.packet(true, true, 90, 0.08, 0.98f, 1021));
+        assertTrue(window.diagnostic().contains("frames=0"));
+    }
+
+    @Test void packetClockStillDetectsFlightDuringBatchedDelivery() {
+        var window = new AirGravityWindow();
+        boolean flagged = false;
+        for (int tick = 0; tick < 10; tick++)
+            flagged |= window.packet(true, true, 80 + tick * .35, .08, .98f, 1000 + tick);
+        assertTrue(flagged);
+    }
     @Test void shortRiseAndOneSecondPauseIsCaughtDuringFirstPause() {
         var window = new AirGravityWindow();
         double y = 80;

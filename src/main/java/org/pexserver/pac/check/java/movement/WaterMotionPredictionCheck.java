@@ -61,6 +61,13 @@ public final class WaterMotionPredictionCheck extends AbstractCheck implements P
             if (context.externalImpulse() != null || !context.plugin().cancel(this, context.uuid()))
                 state.correctionLock.clear();
             var location = context.location();
+            if (previous != null && context.flying().hasPositionChanged()
+                    && context.plugin().environment().collisionChangeNear(context.uuid(),
+                            previous.x(), previous.y(), previous.z(),
+                            location.getX(), location.getY(), location.getZ(), now)) {
+                states.remove(context.uuid(), state);
+                return;
+            }
             var sample = state.sequence.accept(context.flying().hasPositionChanged(),
                     location.getX(), location.getY(), location.getZ(), location.getYaw(),
                     context.plugin().waterMotion().get(context.uuid()),

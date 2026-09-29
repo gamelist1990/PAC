@@ -20,6 +20,7 @@ public final class AirGravityWindow {
     private int lastSteps;
     private long lastIntervalMillis;
     private double lastY;
+    private int positionlessFrames;
 
     public void reset() {
         lastAt = 0;
@@ -27,6 +28,23 @@ public final class AirGravityWindow {
         intervals = 0;
         lastSteps = 0;
         lastIntervalMillis = 0;
+        positionlessFrames = 0;
+    }
+
+    /** TCP arrival spacing is not a client physics clock. Count actual packets. */
+    public boolean packet(boolean eligible, boolean hasPosition, double y,
+                          double gravity, float drag, long now) {
+        if (!eligible) {
+            reset();
+            return false;
+        }
+        if (!hasPosition) {
+            positionlessFrames = Math.min(40, positionlessFrames + 1);
+            return false;
+        }
+        int steps = positionlessFrames + 1;
+        positionlessFrames = 0;
+        return sample(true, y, gravity, drag, now, steps);
     }
 
     /** Compact evidence for a gravity-fit mismatch, useful in server logs. */

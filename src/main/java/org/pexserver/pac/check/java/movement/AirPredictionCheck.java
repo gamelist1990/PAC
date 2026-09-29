@@ -201,6 +201,11 @@ public final class AirPredictionCheck extends AbstractCheck implements PacketChe
             double gravityZ = hoverPosition == null ? location.getZ() : hoverPosition.z();
             boolean freeFall = hoverEligible && !context.timingUncertain()
                     && !context.serverTiming().delayed()
+                    && !context.plugin().environment().collisionChangeNear(context.uuid(),
+                            previous == null ? gravityX : previous.x(),
+                            previous == null ? hoverY : previous.y(),
+                            previous == null ? gravityZ : previous.z(),
+                            gravityX, hoverY, gravityZ, now)
                     && motionImpulse == null
                     // While this grant's tail is still part of the simulated
                     // velocity state, AirMotionSequence owns the full 3D path.
@@ -212,11 +217,10 @@ public final class AirPredictionCheck extends AbstractCheck implements PacketChe
                             previous == null ? hoverY : previous.y(),
                             previous == null ? gravityZ : previous.z(),
                             gravityX, hoverY, gravityZ, now);
-            boolean gravityMismatch = context.flying().hasPositionChanged()
-                    && state.gravityWindow.sample(freeFall, hoverY,
+            boolean gravityMismatch = state.gravityWindow.packet(freeFall,
+                            context.flying().hasPositionChanged(), hoverY,
                             environment == null ? 0 : environment.gravity(),
-                            environment == null ? 0 : environment.verticalDrag(), now,
-                            sample.skippedFrames() + 1);
+                            environment == null ? 0 : environment.verticalDrag(), now);
             if (gravityMismatch) {
                 flagLimited(context, () -> String.format(Locale.ROOT,
                         "continuous gravity trajectory mismatch; %s airOffset=%.4f dy=%.4f skipped=%d velocitySeq=%d",

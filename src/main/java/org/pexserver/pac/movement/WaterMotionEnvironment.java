@@ -109,10 +109,13 @@ public final class WaterMotionEnvironment {
     }
 
     private Snapshot sample(Player player) {
+        // The current predictor models upright liquid travel only. Swimming
+        // needs pitch-directed vertical steering and pose transitions; applying
+        // the upright recurrence to that pose reports legitimate swimming.
         if ((player.getGameMode() != GameMode.SURVIVAL && player.getGameMode() != GameMode.ADVENTURE)
                 || player.isInsideVehicle() || player.isFlying() || player.isGliding()
                 || player.isRiptiding() || player.isClimbing() || !player.hasGravity()
-                || player.isInLava()) return null;
+                || player.isInLava() || player.isSwimming()) return null;
 
         var handle = ((CraftPlayer) player).getHandle();
         if (player.hasPotionEffect(org.bukkit.potion.PotionEffectType.LEVITATION)) return null;

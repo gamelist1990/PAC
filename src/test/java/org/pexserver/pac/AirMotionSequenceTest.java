@@ -349,7 +349,7 @@ class AirMotionSequenceTest {
         assertEquals(0, result.horizontalOffset(), 1e-9);
     }
 
-    @Test void ignoredCombatImpulseIsComparedAgainstVanillaAirResponse() {
+    @Test void preHitAirPacketDoesNotProveKnockbackSuppression() {
         var sequence = new AirMotionSequence();
         sequence.accept(true, true, 0, 70, 0, 0, air(1, 0, 70), 1_050,
                 null, null, clearCollision(1_050));
@@ -359,7 +359,7 @@ class AirMotionSequenceTest {
         var ignored = sequence.accept(true, false, 0, 70, 0, 0,
                 air(2, 0, 70), 1_100, null, knockback, clearCollision(1_100));
 
-        assertTrue(ignored.externalImpulseMismatch(), "a damage impulse with no matching movement must be checked immediately");
+        assertFalse(ignored.externalImpulseMismatch(), "an unacknowledged velocity cannot prove suppression on the next arrival");
     }
 
     @Test void fullObservedKnockbackIsNotFlaggedWhenFirstStepModelHasResidual() {

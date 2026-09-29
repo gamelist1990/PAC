@@ -5,6 +5,15 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ServerTickTimingTest {
+    @Test void seventeenTpsUsesPacketCountsEvenForAn83msArrivalGap() {
+        var timing = new ServerTickTiming();
+        for (int tick = 0; tick <= 30; tick++) timing.tick(tick * 59_000_000L);
+        var snapshot = timing.snapshot(30 * 59_000_000L);
+        assertTrue(snapshot.delayed());
+        assertFalse(snapshot.recovering());
+        assertEquals(1, snapshot.physicsFrames(83, 0));
+        assertEquals(2, snapshot.physicsFrames(83, 1));
+    }
     @Test void estimates20And10And5TpsWithoutDisablingPrediction() {
         for (long interval : new long[] {50, 100, 200}) {
             var timing = new ServerTickTiming();
@@ -38,7 +47,7 @@ class ServerTickTimingTest {
     }
 
     @Test void queuedFreeFallRetainsClientGravityAtLowTps() {
-        for (int serverMillis : new int[] {50, 100, 200}) {
+        for (int serverMillis : new int[] {50, 59, 100, 200}) {
             var timing = new ServerTickTiming();
             for (int tick = 0; tick <= 30; tick++) timing.tick(tick * serverMillis * 1_000_000L);
             var snapshot = timing.snapshot(30L * serverMillis * 1_000_000);

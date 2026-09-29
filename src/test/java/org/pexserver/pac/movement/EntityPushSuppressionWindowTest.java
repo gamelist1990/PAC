@@ -9,6 +9,31 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class EntityPushSuppressionWindowTest {
+    @Test void queuedPacketsCannotMultiplyOnePushObservation() {
+        var window = new EntityPushSuppressionWindow();
+        var collisions = push(0.05, 0, false);
+        for (int packet = 0; packet < 12; packet++) {
+            assertFalse(window.accept(new MotionPredictor.Motion(0, 0, 0), 0, 0,
+                    0, 64, 0, ground(1000), collisions, IDLE_INPUT).flagged());
+        }
+    }
+
+    @Test void boatCollisionDiscardsExistingPushEvidence() {
+        var window = new EntityPushSuppressionWindow();
+        for (int sample = 0; sample < 3; sample++) {
+            window.accept(new MotionPredictor.Motion(0, 0, 0), 0, 0,
+                    0, 64, 0, ground(1000 + sample * 50),
+                    push(0.05, 0, false, 1000 + sample * 50), IDLE_INPUT);
+        }
+        for (int sample = 3; sample < 10; sample++) {
+            assertFalse(window.accept(new MotionPredictor.Motion(0, 0, 0), 0, 0,
+                    0, 64, 0, ground(1000 + sample * 50),
+                    push(0.05, 0, true, 1000 + sample * 50), IDLE_INPUT).eligible());
+        }
+        assertFalse(window.accept(new MotionPredictor.Motion(0, 0, 0), 0, 0,
+                0, 64, 0, ground(1500), push(0.05, 0, false, 1500), IDLE_INPUT).flagged());
+    }
+
     private static final MotionPredictor.Input IDLE = new MotionPredictor.Input(
             false, false, false, false, false, false, false);
     private static final JavaInputCapture.Window IDLE_INPUT =
@@ -22,14 +47,14 @@ class EntityPushSuppressionWindowTest {
 
         for (int sample = 1; sample < 4; sample++) {
             var result = window.accept(previous, 0, 0,
-                    0, 64, 0, environment, collisions, IDLE_INPUT);
+                    0, 64, 0, ground(1000 + sample * 50), push(0.05, 0, false, 1000 + sample * 50), IDLE_INPUT);
             assertTrue(result.eligible());
             assertTrue(result.suspicious());
             assertFalse(result.flagged());
         }
 
         var fourth = window.accept(previous, 0, 0,
-                0, 64, 0, environment, collisions, IDLE_INPUT);
+                0, 64, 0, ground(1200), push(0.05, 0, false, 1200), IDLE_INPUT);
         assertTrue(fourth.flagged());
         assertTrue(fourth.withPushOffset() > fourth.withoutPushOffset());
     }
@@ -68,7 +93,7 @@ class EntityPushSuppressionWindowTest {
                     environment.itemUseMultiplier(), forwardInput).closest();
             var result = window.accept(previous, noPush.dx(), noPush.dz(),
                     0, 64, sample * 0.1, environment,
-                    push(0.05, 0, false), stableForward);
+                    push(0.05, 0, false, 1000 + sample * 50), stableForward);
             detected = result.flagged();
             previous = noPush;
         }
@@ -105,11 +130,15 @@ class EntityPushSuppressionWindowTest {
     }
 
     private static MotionCollisionSnapshot push(double x, double z, boolean hardCollision) {
+        return push(x, z, hardCollision, 1000);
+    }
+
+    private static MotionCollisionSnapshot push(double x, double z, boolean hardCollision, long at) {
         return new MotionCollisionSnapshot(
                 -5, 60, -5, 5, 70, 5,
                 0.6, 1.8, 0.6, 0.6,
                 List.of(), true, true, 1, hardCollision,
-                MotionCollisionSnapshot.StepProfile.V1_21_PLUS, 1_000,
+                MotionCollisionSnapshot.StepProfile.V1_21_PLUS, at,
                 List.of(new MotionCollisionSnapshot.EntityPush(x, z)));
     }
 }

@@ -512,7 +512,29 @@ class GroundMotionSequenceTest {
         assertEquals(0, resumedPrediction.offset(), 1.0e-10);
     }
 
-    @Test void combatVelocityWithNoClientResponseIsFlagged() {
+    @Test void reportedCombatHitsDoNotFlagInFlightGroundMovement() {
+        double[][] hits = {
+                {0.407, 0.361, -0.047, 0.142},
+                {-0.317, 0.361, -0.244, 0.210},
+                {-0.087, 0.361, -0.390, 0.278},
+                {-0.283, 0.361, -0.280, 0.194},
+                {-0.327, 0.361, -0.217, 0.018}
+        };
+        for (double[] hit : hits) {
+            var sequence = new GroundMotionSequence();
+            sequence.accept(true, true, 0, 64, 0, 0, ground(0, 1, 1_000), 1_000,
+                    null, null, fullFloor(1_000));
+            var response = sequence.accept(true, false, hit[3], 64, 0, 0,
+                    ground(hit[3], 2, 1_050), 1_050, null,
+                    new ExternalMotionTracker.Impulse(1, hit[0], hit[1], hit[2],
+                            1_049, false, true), fullFloor(1_050));
+            assertFalse(response.externalImpulseMismatch());
+            assertFalse(response.impossibleTakeoff());
+            assertFalse(response.abrupt());
+        }
+    }
+
+    @Test void preHitMovementAfterVelocitySendDoesNotProveSuppression() {
         var sequence = new GroundMotionSequence();
         sequence.accept(true, true, 0, 64, 0, 0, ground(0, 1, 1_000), 1_000,
                 null, null, fullFloor(1_000));
@@ -521,7 +543,7 @@ class GroundMotionSequenceTest {
         var noKnockback = sequence.accept(true, false, 0, 64, 0, 0,
                 ground(0, 2, 1_050), 1_050, null, impulse, fullFloor(1_050));
 
-        assertTrue(noKnockback.externalImpulseMismatch(), "a cancelled combat impulse must not become the new baseline");
+        assertFalse(noKnockback.externalImpulseMismatch(), "an unacknowledged velocity cannot prove suppression on the next arrival");
     }
 
     @Test void vanillaCombatKnockbackResponseMatchesItsServerImpulse() {
@@ -640,7 +662,7 @@ class GroundMotionSequenceTest {
                 "a changed nearby block can explain a step, but does not disable the speed envelope");
     }
 
-    @Test void combatKnockbackStillUsesBlockAabbsWhenAnEntityPushIsNearby() {
+    @Test void nearbyEntityGeometryDoesNotConfirmVelocityDelivery() {
         var sequence = new GroundMotionSequence();
         sequence.accept(true, true, 0, 64, 0, 0, ground(0, 1, 1_000), 1_000,
                 null, null, fullFloor(1_000));
@@ -653,10 +675,10 @@ class GroundMotionSequenceTest {
                 ground(0, 2, 1_050), 1_050, null,
                 new ExternalMotionTracker.Impulse(1, 0.8, 0, 0, 1_049, false, true), nearEntity);
 
-        assertTrue(noKnockback.externalImpulseMismatch(), "entity push uncertainty must not mask a full cancelled velocity");
+        assertFalse(noKnockback.externalImpulseMismatch(), "an unacknowledged velocity cannot prove suppression on the next arrival");
     }
 
-    @Test void jumpInputDoesNotHideCancelledCombatKnockback() {
+    @Test void jumpInputDoesNotConfirmVelocityDelivery() {
         var sequence = new GroundMotionSequence();
         sequence.accept(true, true, 0, 64, 0, 0, groundAt(0, 64, 0, 1, 1_000), 1_000,
                 null, null, fullFloor(1_000));
@@ -669,11 +691,10 @@ class GroundMotionSequenceTest {
                 new ExternalMotionTracker.Impulse(1, 0.2, 0, 0, 1_049, false, true),
                 fullFloor(1_050));
 
-        assertTrue(cancelled.externalImpulseMismatch(),
-                "the jump-reset candidate must still retain the hit impulse when checking AntiKB");
+        assertFalse(cancelled.externalImpulseMismatch(), "an unacknowledged velocity cannot prove suppression on the next arrival");
     }
 
-    @Test void verticalOnlyCombatKnockbackIsCheckedWhileStillGrounded() {
+    @Test void preHitGroundedPacketDoesNotProveVerticalSuppression() {
         var sequence = new GroundMotionSequence();
         sequence.accept(true, true, 0, 64, 0, 0, ground(0, 1, 1_000), 1_000,
                 null, null, fullFloor(1_000));
@@ -682,7 +703,7 @@ class GroundMotionSequenceTest {
                 ground(0, 2, 1_050), 1_050, null,
                 new ExternalMotionTracker.Impulse(1, 0, 0.42, 0, 1_049, false, true), fullFloor(1_050));
 
-        assertTrue(noKnockback.externalImpulseMismatch(), "vertical velocity cancellation must not be hidden by a grounded snapshot");
+        assertFalse(noKnockback.externalImpulseMismatch(), "an unacknowledged velocity cannot prove suppression on the next arrival");
     }
 
     @Test void sixteenthBlockPathEdgeIsSimulatedAsAnAabbStepInsteadOfAnImpossibleJump() {

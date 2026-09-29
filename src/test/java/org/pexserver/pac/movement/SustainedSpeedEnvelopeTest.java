@@ -10,6 +10,46 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SustainedSpeedEnvelopeTest {
     private static final long BASE_NANOS = System.nanoTime();
+    @Test void queuedUnknownSamplesCountEveryReceivedMovementFrame() {
+        unknownFrameSequence(ServerTickTiming.Snapshot.NORMAL, 1_000_000L, false, 0.28);
+    }
+
+    @Test void delayedServerUnknownSamplesCountEveryReceivedMovementFrame() {
+        unknownFrameSequence(new ServerTickTiming.Snapshot(100, 100, false, 0),
+                50_000_000L, false, 0.28);
+    }
+
+    @Test void unknownSamplesRetainInterveningPositionlessFrames() {
+        unknownFrameSequence(ServerTickTiming.Snapshot.NORMAL, 1_000_000L, true, 0.28);
+    }
+
+    @Test void queuedUnknownSamplesStillDetectSustainedSpeedExcess() {
+        unknownFrameSequence(ServerTickTiming.Snapshot.NORMAL, 1_000_000L, false, 0.66);
+    }
+
+    private void unknownFrameSequence(ServerTickTiming.Snapshot timing, long interval,
+                                      boolean positionless, double speed) {
+        var envelope = new SustainedSpeedEnvelope();
+        envelope.timing(timing);
+        envelope.accept(0, 64, 0, ground(0, 0, 64), null, BASE_NANOS, false);
+        double x = 0;
+        boolean flagged = false;
+        for (int tick = 1; tick <= 12; tick++) {
+            if (positionless) envelope.positionless();
+            x += speed * (positionless ? 2 : 1);
+            var sample = envelope.accept(x, 64, 0,
+                    tick % 3 == 0 ? ground(tick, x, 64) : unknown(tick, x, 64),
+                    null, BASE_NANOS + tick * interval, false);
+            if (tick % 3 == 0) {
+                assertTrue(sample.evaluated());
+                assertEquals(speed, sample.speed(), 1.0e-9,
+                        "aggregate displacement must use all received client frames");
+            }
+            flagged |= sample.flagged();
+        }
+        assertEquals(speed > 0.6, flagged);
+    }
+
     @Test void repeatedVanillaSprintJumpsKeepMomentumAcrossLandingSnapshots() {
         sprintJumps(0, false);
     }

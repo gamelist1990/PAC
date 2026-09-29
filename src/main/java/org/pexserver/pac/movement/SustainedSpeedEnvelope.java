@@ -31,6 +31,8 @@ public final class SustainedSpeedEnvelope {
     private boolean previousGround;
     private boolean serverVelocityActive;
     private int positionlessFrames;
+    private int retainedFrames;
+    private long retainedAtNanos;
     private GroundMotionSequence.Position suspiciousAnchor;
 
     /**
@@ -99,8 +101,7 @@ public final class SustainedSpeedEnvelope {
             // between ground and air, so seed before the ordinary-mode gate.
             if (initialized && nowNanos >= lastAtNanos
                     && nowNanos - lastAtNanos <= MAX_SAMPLE_GAP_NANOS) {
-                int frames = timing.physicsFrames(
-                        Math.max(1, (nowNanos - lastAtNanos) / 1_000_000L), skippedFrames);
+                int frames = physicsFrames(nowNanos, skippedFrames);
                 externalMomentumBound = Math.hypot(nextX - x, nextZ - z) / frames;
             } else externalMomentumBound = 0;
             baseline(nextX, nextY, nextZ, nowNanos);
@@ -108,8 +109,7 @@ public final class SustainedSpeedEnvelope {
         }
         if (nowNanos < suspendedUntilNanos) {
             if (initialized && nowNanos >= lastAtNanos) {
-                int frames = timing.physicsFrames(
-                        Math.max(1, (nowNanos - lastAtNanos) / 1_000_000L), skippedFrames);
+                int frames = physicsFrames(nowNanos, skippedFrames);
                 externalMomentumBound = Math.max(externalMomentumBound,
                         Math.hypot(nextX - x, nextZ - z) / frames);
             }
@@ -143,7 +143,13 @@ public final class SustainedSpeedEnvelope {
                     && nowNanos - lastAtNanos <= UNKNOWN_CONTEXT_HOLD_NANOS
                     && fresh
                     && (environment.near(x, y, z) || environment.near(nextX, nextY, nextZ));
-            if (!transientUnknown) reset();
+            if (transientUnknown) {
+                // Keep the packet count with the retained position anchor.
+                // Arrival time alone loses these physics steps when TCP delivers
+                // a burst, and delayed server timing intentionally ignores it.
+                retainedFrames = physicsFrames(nowNanos, skippedFrames);
+                retainedAtNanos = nowNanos;
+            } else reset();
             return Sample.skipped();
         }
         if (!initialized || nowNanos < lastAtNanos
@@ -159,8 +165,7 @@ public final class SustainedSpeedEnvelope {
         }
 
         GroundMotionSequence.Position previous = new GroundMotionSequence.Position(x, y, z);
-        long elapsedMillis = Math.max(1, (nowNanos - lastAtNanos) / 1_000_000L);
-        int frames = timing.physicsFrames(elapsedMillis, skippedFrames);
+        int frames = physicsFrames(nowNanos, skippedFrames);
         double dx = nextX - x, dy = nextY - y, dz = nextZ - z;
         if (collisions != null) {
             dx -= collisions.entityPushX();
@@ -298,6 +303,17 @@ public final class SustainedSpeedEnvelope {
         previousGround = false;
         serverVelocityActive = false;
         positionlessFrames = 0;
+        retainedFrames = 0;
+        retainedAtNanos = 0;
+    }
+
+    private int physicsFrames(long nowNanos, int skippedFrames) {
+        long segmentStart = retainedFrames > 0 ? retainedAtNanos : lastAtNanos;
+        int segmentFrames = timing.physicsFrames(
+                Math.max(1, (nowNanos - segmentStart) / 1_000_000L), skippedFrames);
+        int elapsedFrames = timing.physicsFrames(
+                Math.max(1, (nowNanos - lastAtNanos) / 1_000_000L), skippedFrames);
+        return Math.min(40, Math.max(elapsedFrames, retainedFrames + segmentFrames));
     }
 
     private enum VerticalTransition { NONE, STEP, JUMP }
@@ -340,6 +356,8 @@ public final class SustainedSpeedEnvelope {
         this.y = y;
         this.z = z;
         lastAtNanos = nowNanos;
+        retainedFrames = 0;
+        retainedAtNanos = 0;
         initialized = true;
     }
 

@@ -7,6 +7,24 @@ import org.pexserver.pac.movement.SurfaceMotionSequence;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class SurfaceMotionSequenceTest {
+    @Test void oneLiquidSnapshotCannotBecomeRepeatedEvidenceDuringServerLag() {
+        var sequence = new SurfaceMotionSequence();
+        var snapshot = surface(64, 1000, false, true);
+        sequence.accept(true, 0, 64, 0, true, snapshot, 1000);
+        for (int packet = 1; packet < 12; packet++)
+            assertEquals(SurfaceMotionSequence.Anomaly.NONE,
+                    sequence.accept(packet % 2 == 0, 0, 64, 0, true, snapshot, 1000 + packet));
+    }
+    @Test void oneAirSnapshotCannotBecomeRepeatedEvidenceDuringServerLag() {
+        var sequence = new SurfaceMotionSequence();
+        var snapshot = airborne(67, 1000);
+        sequence.accept(true, 0, 67, 0, true, snapshot, 1000);
+        for (int packet = 1; packet <= 12; packet++) {
+            assertEquals(SurfaceMotionSequence.Anomaly.NONE,
+                    sequence.accept(packet % 2 == 0, 0, 67, 0, true, snapshot, 1000 + packet));
+        }
+    }
+
     private static MotionEnvironment.Snapshot surface(double y, long at,
                                                        boolean wall, boolean liquid) {
         return new MotionEnvironment.Snapshot(false, false, false, false, false,

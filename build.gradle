@@ -38,6 +38,7 @@ tasks.withType(JavaCompile).configureEach {
 }
 
 tasks.processResources {
+    inputs.property('version', project.version)
     filesMatching('plugin.yml') { expand(version: project.version) }
     exclude 'ml/m1.dat', 'ml/m2.dat', 'ml/m3.dat', 'ml/m4.dat', 'ml/m5.dat', 'ml/m_huge1.dat', 'ml/m_huge2.dat'
 }

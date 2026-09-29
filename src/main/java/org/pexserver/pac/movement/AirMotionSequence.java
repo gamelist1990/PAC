@@ -272,36 +272,17 @@ public final class AirMotionSequence {
                     && environment.ordinaryAir() && horizontalModelStable && responseFrame != null
                     ? MultiStepMotionPredictor.airImpulseResponse(previousMotion, dx, dz, responseFrame,
                             startX, startY, startZ) : null;
-            boolean trustedCollision = collisions != null && collisions.blockGeometryComplete()
-                    && !collisions.hardEntityCollisionPossible()
-                    && now >= collisions.capturedAt() && now - collisions.capturedAt() <= 200;
-            double allowedResponseOffset = 0.10;
-            boolean expectedHorizontalKnockback = impulse != null && impulse.combatKnockback()
-                    && Math.hypot(impulse.x(), impulse.z()) >= 0.15;
-            boolean expectedVerticalKnockback = impulse != null && impulse.combatKnockback()
-                    && Math.abs(impulse.y()) >= 0.15;
-            // A model residual is only evidence of AntiKB if the corresponding
-            // observed movement component was actually suppressed. Real damage
-            // impulses commonly include simultaneous player input and collisions,
-            // so the first-step simulation can differ while the player still
-            // receives the full server velocity.
-            boolean horizontalImpulseSuppressed = expectedHorizontalKnockback
-                    && horizontalResponse != null
-                    && horizontalResponse.offset() > allowedResponseOffset
-                    && responseComponentSuppressed(horizontal,
-                            Math.hypot(impulse.x(), impulse.z()));
-            boolean verticalImpulseSuppressed = expectedVerticalKnockback
-                    && verticalResponse != null
-                    && verticalResponse.offset() > allowedResponseOffset
-                    && responseComponentSuppressed(Math.abs(dy), Math.abs(impulse.y()));
-            boolean impulseMismatch = trustedCollision
-                    && (horizontalImpulseSuppressed || verticalImpulseSuppressed);
+            // Sending velocity does not establish which inbound movement first
+            // includes it. An already in-flight pre-hit packet can arrive next,
+            // even at low ping. Until transport acknowledgements delimit the
+            // response window, this transition may seed prediction but cannot
+            // establish knockback suppression.
             previousDy = verticalResponse != null && verticalResponse.offset() <= 0.08
                     ? verticalResponse.finalVelocity() : dy;
             previousMotion = horizontalResponse != null && horizontalResponse.offset() <= 0.08
                     ? horizontalResponse.finalVelocity() : actual;
             reliable = ordinary;
-            return new Sample(false, 0, false, horizontal, dy, impulseMismatch, false, 0,
+            return new Sample(false, 0, false, horizontal, dy, false, false, 0,
                     Math.max(skippedFrames, physicsFrames - 1));
         }
         if (!stable || !reliable) {
@@ -456,13 +437,6 @@ public final class AirMotionSequence {
         }
         return offset;
     }
-
-    private static boolean responseComponentSuppressed(double observed, double serverImpulse) {
-        return Double.isFinite(observed) && Double.isFinite(serverImpulse)
-                && serverImpulse >= 0.15
-                && observed < Math.max(0.025, serverImpulse * 0.45);
-    }
-
     private double[] collisionAirOffsets(MotionPredictor.Motion initialHorizontal, double initialVertical,
                                          double actualX, double actualY, double actualZ,
                                          double startX, double startY, double startZ, float heading,

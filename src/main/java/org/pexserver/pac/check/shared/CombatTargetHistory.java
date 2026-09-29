@@ -25,6 +25,9 @@ final class CombatTargetHistory {
                 box.getMaxX(), box.getMaxY(), box.getMaxZ());
         ArrayDeque<Frame> history = frames.computeIfAbsent(uuid, ignored -> new ArrayDeque<>());
         synchronized (history) {
+            Frame last = history.peekLast();
+            if (last != null && last.world().equals(world) && at >= last.at()
+                    && at - last.at() < 25 && sameBox(last.box(), copy)) return;
             history.addLast(new Frame(world, copy, at));
             long cutoff = at - RETENTION_MILLIS;
             while (!history.isEmpty()
@@ -52,6 +55,41 @@ final class CombatTargetHistory {
 
     void forget(UUID uuid) {
         if (uuid != null) frames.remove(uuid);
+    }
+
+    /** Strict geometry is only safe once the target has settled across client interpolation. */
+    BoundingBox stableBox(UUID uuid, UUID world, BoundingBox current, long now) {
+        ArrayDeque<Frame> history = frames.get(uuid);
+        if (history == null) return null;
+        synchronized (history) {
+            boolean covered = false;
+            long newest = -1;
+            for (Frame frame : history) {
+                if (frame.at() < now - 350 || frame.at() > now) continue;
+                if (!frame.world().equals(world) || !sameBox(frame.box(), current)) return null;
+                if (frame.at() <= now - 250) covered = true;
+                newest = Math.max(newest, frame.at());
+            }
+            return covered && newest >= now - 100 ? current.clone() : null;
+        }
+    }
+
+    void prune(long now) {
+        frames.entrySet().removeIf(entry -> {
+            synchronized (entry.getValue()) {
+                return entry.getValue().isEmpty()
+                        || entry.getValue().peekLast().at() < now - RETENTION_MILLIS;
+            }
+        });
+    }
+
+    private static boolean sameBox(BoundingBox a, BoundingBox b) {
+        return Math.abs(a.getMinX() - b.getMinX()) < 0.001
+                && Math.abs(a.getMinY() - b.getMinY()) < 0.001
+                && Math.abs(a.getMinZ() - b.getMinZ()) < 0.001
+                && Math.abs(a.getMaxX() - b.getMaxX()) < 0.001
+                && Math.abs(a.getMaxY() - b.getMaxY()) < 0.001
+                && Math.abs(a.getMaxZ() - b.getMaxZ()) < 0.001;
     }
 
     static long trustedRewindMillis(int reportedPingMillis) {

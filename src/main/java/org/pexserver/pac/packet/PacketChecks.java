@@ -288,6 +288,7 @@ public final class PacketChecks implements PacketListener, Listener {
                 latencyWindows.computeIfAbsent(uuid, ignored -> new org.pexserver.pac.movement.MovementLatencyWindow())
                         .uncertain(now)
                         || serverTiming.recovering()
+                        || plugin.environment().movingSupportUncertain(uuid, now)
                         || plugin.environment().poseTransitionUncertain(uuid, now), serverTiming);
         plugin.checks().dispatch(context);
         if (flying.hasPositionChanged() && !event.isCancelled()) {

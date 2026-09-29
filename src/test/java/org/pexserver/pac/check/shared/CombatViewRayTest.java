@@ -60,4 +60,10 @@ class CombatViewRayTest {
         assertFalse(CombatViewRay.entirelyBehind(eye, 90,
                 new BoundingBox(-2, 0, -0.3, -1.5, 1.8, 0.3), 0.03));
     }
+    @org.junit.jupiter.api.Test void outOfReachTargetCanStillBeInTheAttackView() {
+        var eye = new org.bukkit.util.Vector(0, 1.6, 0);
+        var cow = new org.bukkit.util.BoundingBox(-0.45, 0, 4.34, 0.45, 1.8, 5.24);
+        org.junit.jupiter.api.Assertions.assertFalse(CombatViewRay.intersects(eye, 0, 0, cow, 0.1, 3.1));
+        org.junit.jupiter.api.Assertions.assertTrue(CombatViewRay.intersects(eye, 0, 0, cow, 0.1, 64));
+    }
 }

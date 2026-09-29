@@ -392,6 +392,7 @@ public final class MotionEnvironment implements Listener {
     private final Map<UUID, Long> elytraBoostUntil = new ConcurrentHashMap<>();
     private final Map<UUID, SafeGround> safeGround = new ConcurrentHashMap<>();
     private final Map<UUID, Long> graceUntil = new ConcurrentHashMap<>();
+    private final Map<UUID, MovingSupportWindow> movingSupports = new ConcurrentHashMap<>();
     private final Map<UUID, TeleportSyncWindow> teleports = new ConcurrentHashMap<>();
     private final Map<UUID, Long> teleportGeneration = new ConcurrentHashMap<>();
     private record ExpectedPacCorrection(UUID world, double x, double y, double z, long expiresAt) { }
@@ -452,6 +453,7 @@ public final class MotionEnvironment implements Listener {
         worldHistory.forget(uuid);
     }
     public void forget(UUID uuid) {
+        movingSupports.remove(uuid);
         poseTransitions.remove(uuid);
         glideTransitions.remove(uuid);
         pingMillis.remove(uuid);
@@ -491,6 +493,7 @@ public final class MotionEnvironment implements Listener {
         if (window != null) window.confirm(id, System.currentTimeMillis());
     }
     private boolean suppressed(UUID uuid, long now) {
+        if (movingSupportUncertain(uuid, now)) return true;
         if (now < graceUntil.getOrDefault(uuid, 0L)) return true;
         TeleportSyncWindow window = teleports.get(uuid);
         // Keep the window until logout. Removing it here races with a new
@@ -500,12 +503,47 @@ public final class MotionEnvironment implements Listener {
 
     public void sampleAll() { sampleAll(Bukkit.getOnlinePlayers()); }
 
+    public boolean movingSupportUncertain(UUID uuid, long now) {
+        MovingSupportWindow window = movingSupports.get(uuid);
+        return window != null && window.uncertain(now);
+    }
+
+    private void movingSupportContact(Player player) {
+        movingSupports.computeIfAbsent(player.getUniqueId(), ignored -> new MovingSupportWindow())
+                .contact(System.currentTimeMillis(), player.getPing());
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onVehicleEnter(org.bukkit.event.vehicle.VehicleEnterEvent event) {
+        if (event.getEntered() instanceof Player player) movingSupportContact(player);
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onVehicleExit(org.bukkit.event.vehicle.VehicleExitEvent event) {
+        if (event.getExited() instanceof Player player) movingSupportContact(player);
+    }
+
     public void sampleAll(Iterable<? extends Player> players) {
         for (Player player : players) samplePlayer(player);
     }
 
     public void samplePlayer(Player player) {
         var bodyPose = player.getBoundingBox();
+        // Client interpolation can retain a boat floor after its server AABB
+        // has moved away. Keep a bounded transition window around real contact.
+        boolean movingSupport = player.isInsideVehicle();
+        var support = ground.state(player.getUniqueId());
+        movingSupport |= support != null && support.entitySupport();
+        if (!movingSupport) {
+            for (Entity nearby : player.getWorld().getNearbyEntities(bodyPose.clone().expand(0.5, 0.8, 0.5))) {
+                if ((nearby instanceof org.bukkit.entity.Boat || nearby instanceof org.bukkit.entity.Minecart)
+                        && EntityCollisionPolicy.canCollide(player, nearby)) {
+                    movingSupport = true;
+                    break;
+                }
+            }
+        }
+        if (movingSupport) movingSupportContact(player);
         var poseTransition = poseTransitions.computeIfAbsent(player.getUniqueId(),
                 ignored -> new PoseMotionPolicy.Transition());
         synchronized (poseTransition) {
@@ -534,7 +572,7 @@ public final class MotionEnvironment implements Listener {
         climbSnapshots.put(uuid, new ClimbSnapshot(player.isClimbing(),
                 sampledLocation.getX(), sampledLocation.getY(), sampledLocation.getZ(),
                 System.currentTimeMillis()));
-        if (snapshot.ordinaryGround() || snapshot.verticalAir()
+        if (snapshot.ordinaryGround() || snapshot.verticalAir() || movingSupport
                 || player.isGliding() || player.isInWater() && !player.isInLava())
             collisionSnapshots.put(uuid, sampleCollisions(player,
                     previous, continuous, stepProfiles.getOrDefault(uuid,
@@ -952,7 +990,7 @@ public final class MotionEnvironment implements Listener {
         // Surface spoofing checks must still run when Bukkit already considers
         // the player wet; Jesus clients intentionally collide with liquid on
         // their side and send forged on-ground movement packets.
-        boolean waterSurface = knownGround
+        boolean waterSurface = knownGround && !state.entitySupport()
                 && (player.getGameMode() == GameMode.SURVIVAL
                     || player.getGameMode() == GameMode.ADVENTURE)
                 && !player.isInsideVehicle() && waterSurface(player);

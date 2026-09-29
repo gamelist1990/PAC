@@ -4,6 +4,7 @@ import org.pexserver.pac.check.core.AbstractCheck;
 import org.pexserver.pac.check.core.PacketCheck;
 import org.pexserver.pac.check.core.PacketContext;
 import org.pexserver.pac.movement.SurfaceMotionSequence;
+import org.pexserver.pac.movement.AirGravityWindow;
 
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -34,6 +35,29 @@ public final class SurfacePredictionCheck extends AbstractCheck implements Packe
         SurfaceMotionSequence.Anomaly anomaly;
         synchronized (state) {
             long now = System.currentTimeMillis();
+            var environment = context.plugin().environment().get(context.uuid());
+            var collisions = context.plugin().environment().collisions(context.uuid());
+            if (environment == null || collisions != null && collisions.hardEntityCollisionPossible()) {
+                // Boats are moving collision floors. Their client-interpolated
+                // support cannot be disproved by a block/liquid-only snapshot.
+                states.remove(context.uuid(), state);
+                return;
+            }
+            double x = context.flying().hasPositionChanged() ? location.getX() : environment.x();
+            double y = context.flying().hasPositionChanged() ? location.getY() : environment.y();
+            double z = context.flying().hasPositionChanged() ? location.getZ() : environment.z();
+            boolean changed = context.plugin().environment().collisionChangeNear(context.uuid(),
+                    environment.x(), environment.y(), environment.z(), x, y, z, now);
+            // A broad near() match can describe air beside a supported block.
+            // Confirm clearance at the claimed position, and discard evidence
+            // while mining/placement makes the collision snapshot uncertain.
+            if (changed || context.flying().isOnGround()
+                    && (environment.gravityAirborne() || environment.waterSurface())
+                    && !AirGravityWindow.clearVerticalSweep(
+                            context.plugin().environment().collisions(context.uuid()), x, y, z, now)) {
+                states.remove(context.uuid(), state);
+                return;
+            }
             var powderSnow = context.plugin().environment().powderSnow(context.uuid());
             boolean unsupportedPowderSnow = !context.plugin().isBedrockPlayer(context.uuid())
                     && powderSnow != null && powderSnow.unauthorized()
@@ -42,7 +66,7 @@ public final class SurfacePredictionCheck extends AbstractCheck implements Packe
             anomaly = state.accept(context.flying().hasPositionChanged(),
                     location.getX(), location.getY(), location.getZ(),
                     context.flying().isOnGround(),
-                    context.plugin().environment().get(context.uuid()), unsupportedPowderSnow,
+                    environment, unsupportedPowderSnow,
                     climb, now);
         }
         if (anomaly == SurfaceMotionSequence.Anomaly.NONE) return;

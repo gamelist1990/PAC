@@ -29,6 +29,7 @@ public final class EntityPushSuppressionWindow {
     }
 
     private int streak;
+    private long lastCapture = Long.MIN_VALUE;
 
     public Sample accept(MotionPredictor.Motion previous,
                          double actualX, double actualZ,
@@ -45,6 +46,11 @@ public final class EntityPushSuppressionWindow {
             reset();
             return Sample.skipped();
         }
+
+        // One sampled contact is not four independently confirmed pushes.
+        // Packet bursts can reuse it while the main thread has not advanced.
+        if (collisions.capturedAt() <= lastCapture) return Sample.skipped();
+        lastCapture = collisions.capturedAt();
 
         MotionPredictor.Input input = inputs.current();
         MotionPredictor.Input previousInput = inputs.previous();

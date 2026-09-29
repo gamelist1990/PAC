@@ -83,10 +83,12 @@ public final class KillAuraCheck extends AbstractCheck implements PacketCheck, E
     private final Map<UUID, CombatState> combat = new ConcurrentHashMap<>();
     private final Set<UUID> deadPlayers = ConcurrentHashMap.newKeySet();
     private final PacPlugin plugin;
+    private final ReachCheck reach;
     private final MxAimModelRuntime mxModels;
 
-    public KillAuraCheck(PacPlugin plugin) {
+    public KillAuraCheck(PacPlugin plugin, ReachCheck reach) {
         this.plugin = plugin;
+        this.reach = reach;
         this.mxModels = new MxAimModelRuntime(plugin.getLogger()::info,
                 plugin.getLogger()::severe, plugin.getLogger()::warning);
     }
@@ -204,7 +206,8 @@ public final class KillAuraCheck extends AbstractCheck implements PacketCheck, E
             long now = System.currentTimeMillis();
             markAttack(state, now);
             state.pendingAttack = new PendingAttack(entityId, now, state.latestYaw, state.latestPitch,
-                    state.hasLatestLook);
+                    state.hasLatestLook && now >= state.latestLookAt
+                            && now - state.latestLookAt <= ATTACK_LOOK_MAX_AGE_MILLIS);
             state.attackRotations.attackPacket(now);
             if (entityId >= 0)
                 finding = state.combatPatterns.attackPacket(entityId, now);
@@ -280,13 +283,19 @@ public final class KillAuraCheck extends AbstractCheck implements PacketCheck, E
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onDamage(EntityDamageByEntityEvent event) {
         if (event.isCancelled() || event.getFinalDamage() <= 0
-                || event.getCause() == EntityDamageEvent.DamageCause.ENTITY_SWEEP_ATTACK
+                || event.getCause() != EntityDamageEvent.DamageCause.ENTITY_ATTACK
                 || !(event.getDamager() instanceof Player player)) return;
 
         Entity victim = event.getEntity();
         UUID uuid = player.getUniqueId();
         if (player.isDead() || deadPlayers.contains(uuid) || !plugin.enabled(uuid, this)
                 || plugin.isExempt(uuid) || !combatMode(player)) return;
+        if (!victim.isValid() || victim.isDead()
+                || plugin.environment().movementSuppressed(uuid)
+                || plugin.recentExternalMotion(uuid)) {
+            resetForLifecycle(player);
+            return;
+        }
 
         boolean bedrock = plugin.isBedrockPlayer(uuid);
         CombatState state = combat.computeIfAbsent(uuid, ignored -> new CombatState());
@@ -329,15 +338,23 @@ public final class KillAuraCheck extends AbstractCheck implements PacketCheck, E
             if (plugin.cancel(this, uuid) && now < state.aimConfirmedUntil) event.setCancelled(true);
         }
 
-        if (packetViewMatched && victim.isValid()) {
+        var stableTarget = reach.stableTargetBox(victim, now);
+        // Packet look and Bukkit positions are not an acknowledged client scene.
+        // Only apply strict geometry when the target has stopped interpolating.
+        boolean geometryReady = packetViewMatched && stableTarget != null
+                && !player.isInsideVehicle() && !victim.isInsideVehicle()
+                && player.getPing() <= 150;
+        if (geometryReady) {
             var eyeLocation = player.getEyeLocation();
             var eye = eyeLocation.toVector();
-            var targetBox = victim.getBoundingBox();
+            var targetBox = stableTarget;
             double expansion = attackViewExpansion(player, victim);
             double maxDistance = attackViewDistance(player);
             double targetDistance = CombatViewRay.intersectionDistance(
                     eye, attackYaw, attackPitch, targetBox, expansion, maxDistance);
-            boolean viewMiss = !Double.isFinite(targetDistance);
+            // A finite-range miss is reach evidence, not proof of incorrect aim.
+            boolean viewMiss = !CombatViewRay.intersects(eye, attackYaw, attackPitch,
+                    targetBox, expansion, 64.0);
             boolean confirmedViewMiss;
             int viewMissStreak;
             synchronized (state) {
@@ -415,11 +432,15 @@ public final class KillAuraCheck extends AbstractCheck implements PacketCheck, E
             if (plugin.cancel(this, uuid)) event.setCancelled(true);
         }
 
+        if (!geometryReady) {
+            synchronized (state) { state.rearAttacks.reset(); }
+            return;
+        }
         var eye = player.getEyeLocation().toVector();
         double maxForwardProjection = CombatViewRay.maximumHorizontalProjection(
-                eye, attackYaw, victim.getBoundingBox());
+                eye, attackYaw, stableTarget);
         boolean rearHit = CombatViewRay.entirelyBehind(
-                eye, attackYaw, victim.getBoundingBox(), 0.03);
+                eye, attackYaw, stableTarget, 0.03);
         boolean confirmedRearHit;
         int rearStreak;
         synchronized (state) {

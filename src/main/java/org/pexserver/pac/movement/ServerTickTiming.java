@@ -5,7 +5,7 @@ public final class ServerTickTiming {
     public record Snapshot(double millisPerTick, long tickAgeMillis, boolean recovering,
                            long timerAllowanceMillis) {
         public static final Snapshot NORMAL = new Snapshot(50, 0, false, 0);
-        public boolean delayed() { return millisPerTick >= 65 || tickAgeMillis >= 75; }
+        public boolean delayed() { return millisPerTick >= 55 || tickAgeMillis >= 75; }
         public double tps() { return Math.min(20, 1_000 / millisPerTick); }
         public int physicsFrames(long elapsedMillis, int positionlessPackets) {
             // TCP preserves individual movement packets. A slow server does not

@@ -162,7 +162,7 @@ public final class PacPlugin extends JavaPlugin implements Listener {
         ScaffoldCheck scaffold = new ScaffoldCheck(this);
         reach = new ReachCheck(this);
         vehicleMovement = new VehicleMovementCheck(this);
-        killAura = new KillAuraCheck(this);
+        killAura = new KillAuraCheck(this, reach);
         checks.register(crashChest);
         checks.register(exploitActions);
         checks.register(scaffold);

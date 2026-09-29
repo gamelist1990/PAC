@@ -403,41 +403,18 @@ public final class GroundMotionSequence {
                     && responseFrame != null
                     ? MultiStepMotionPredictor.groundImpulseResponse(previousMotion, dx, dz,
                             responseFrame, startX, startY, startZ) : null;
-            boolean trustedCollision = collisions != null && collisions.blockGeometryComplete()
-                    && !collisions.hardEntityCollisionPossible()
-                    && now >= collisions.capturedAt() && now - collisions.capturedAt() <= 200;
-            boolean expectedKnockback = impulse != null && impulse.combatKnockback()
-                    && Math.hypot(impulse.x(), impulse.z()) >= 0.15;
-            boolean expectedVerticalKnockback = impulse != null && impulse.combatKnockback()
-                    && Math.abs(impulse.y()) >= 0.15;
-            double allowedResponseOffset = 0.10;
-            double verticalResponseOffset = expectedVerticalKnockback && trustedCollision
-                    && environment != null
-                    ? collisionVerticalImpulseOffset(impulse, dx, dy, dz, startX, startY, startZ,
-                            environment, collisions,
-                            responseFrame != null && responseFrame.get(0).jumpPossible()) : 0;
-            // A response-model difference alone is not proof of AntiKB: the first
-            // damage step can include input, step-up, edge clipping, and packet
-            // timing. Require both a poor simulation match and a materially
-            // suppressed observed component. A resolved block collision is also
-            // required for the vertical branch; uncovered AABB sweeps are unknown.
-            boolean horizontalImpulseSuppressed = expectedKnockback && response != null
-                    && response.offset() > allowedResponseOffset
-                    && responseComponentSuppressed(horizontal, Math.hypot(impulse.x(), impulse.z()));
-            boolean verticalImpulseSuppressed = expectedVerticalKnockback && trustedCollision
-                    && environment != null && Double.isFinite(verticalResponseOffset)
-                    && verticalResponseOffset > 0.10
-                    && responseComponentSuppressed(Math.abs(dy), Math.abs(impulse.y()));
-            boolean impulseMismatch = horizontalImpulseSuppressed || verticalImpulseSuppressed;
+            // Sending velocity does not establish which inbound movement first
+            // includes it. An already in-flight pre-hit packet can arrive next,
+            // even at low ping. Until transport acknowledgements delimit the
+            // response window, this transition may seed prediction but cannot
+            // establish knockback suppression.
             if (response != null && response.offset() <= 0.08)
                 previousMotion = postBlockSpeed(response.finalVelocity(), environment);
             else previousMotion = postBlockSpeed(actual, environment);
-            // Compare the first combat response before rebasing. Then use the
-            // observed movement as the next baseline so one hit cannot cascade
-            // into repeated flags from the same stale impulse.
+            // Rebase without treating the first arrival as a confirmed response.
             reliable = ordinary;
             return new Sample(false, response == null ? 0 : response.offset(), false,
-                    horizontal, dy, impulseMismatch, false, 0,
+                    horizontal, dy, false, false, 0,
                     Math.max(skippedFrames, physicsFrames - 1));
         }
         if (!stable || !reliable) {
@@ -611,34 +588,6 @@ public final class GroundMotionSequence {
             }
         }
         return false;
-    }
-
-    private double collisionVerticalImpulseOffset(ExternalMotionTracker.Impulse impulse,
-                                                   double actualX, double actualY, double actualZ,
-                                                   double startX, double startY, double startZ,
-                                                   MotionEnvironment.Snapshot environment,
-                                                   MotionCollisionSnapshot collisions,
-                                                   boolean jumpPossible) {
-        double postGravity = AirPredictor.nextDisplacement(impulse.y(), environment.gravity(),
-                environment.verticalDrag(), environment.slowFalling(), environment.levitationAmplifier());
-        double best = Double.POSITIVE_INFINITY;
-        List<Double> expectedVertical = new ArrayList<>(List.of(impulse.y(), postGravity));
-        if (jumpPossible) expectedVertical.add((double) environment.jumpStrength());
-        MotionCollisionSnapshot.MoveBuffer moves = MotionCollisionSnapshot.predictionBuffer();
-        for (double expectedY : expectedVertical) {
-            int moveCount = collisions.resolveInto(startX, startY, startZ,
-                    actualX, expectedY, actualZ, true, moves);
-            for (int moveIndex = 0; moveIndex < moveCount; moveIndex++) {
-                best = Math.min(best, Math.abs(actualY - moves.y(moveIndex)));
-            }
-        }
-        return Double.isFinite(best) ? best : Double.NaN;
-    }
-
-    private static boolean responseComponentSuppressed(double observed, double serverImpulse) {
-        return Double.isFinite(observed) && Double.isFinite(serverImpulse)
-                && serverImpulse >= 0.15
-                && observed < Math.max(0.025, serverImpulse * 0.45);
     }
 
     private boolean collisionMovementMatches(MotionPredictor.Motion initial,

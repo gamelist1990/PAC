@@ -8,6 +8,8 @@ public final class SurfaceMotionSequence {
     private long lastAt;
     private double lastDy;
     private int wallRise, climbRise, liquidClaims, powderSnowClaims, airGroundClaims;
+    private long lastAirCapture = Long.MIN_VALUE;
+    private long lastLiquidCapture = Long.MIN_VALUE;
 
     public Anomaly accept(boolean hasPosition, double packetX, double packetY, double packetZ,
                           boolean claimedGround, MotionEnvironment.Snapshot environment, long now) {
@@ -33,14 +35,13 @@ public final class SurfaceMotionSequence {
                     && environment.near(x, y, z);
             if (!usable || !environment.wallAdjacent()) wallRise = 0;
             if (climb == null || !climb.climbing() || !climb.near(x, y, z, now)) climbRise = 0;
-            liquidClaims = usable && liquidSampleMatches(environment, x, y, z)
-                    && environment.waterSurface() && !environment.ordinaryGround() && claimedGround
-                    ? liquidClaims + 1 : 0;
+            countLiquidClaim(usable && liquidSampleMatches(environment, x, y, z)
+                    && environment.waterSurface() && !environment.ordinaryGround() && claimedGround,
+                    environment);
             powderSnowClaims = usable && unsupportedPowderSnow
                     && !environment.ordinaryGround() && claimedGround ? powderSnowClaims + 1 : 0;
-            airGroundClaims = usable && airSampleMatches(environment, x, y, z)
-                    && environment.gravityAirborne() && claimedGround
-                    ? airGroundClaims + 1 : 0;
+            countAirClaim(usable && airSampleMatches(environment, x, y, z)
+                    && environment.gravityAirborne() && claimedGround, environment);
             lastAt = now;
             if (powderSnowClaims >= 4) {
                 powderSnowClaims = 0;
@@ -93,16 +94,15 @@ public final class SurfaceMotionSequence {
         wallRise = usable && environment.wallAdjacent() && !ballisticRise
                 && dy > 0.095 && dy < 0.29
                 ? wallRise + 1 : 0;
-        liquidClaims = usable && liquidSampleMatches(environment, nx, ny, nz)
-                && environment.waterSurface() && !environment.ordinaryGround() && claimedGround
-                ? liquidClaims + 1 : 0;
+        countLiquidClaim(usable && liquidSampleMatches(environment, nx, ny, nz)
+                && environment.waterSurface() && !environment.ordinaryGround() && claimedGround,
+                environment);
         boolean stationaryPowderSnowStep = Math.abs(dy) <= 0.001
                 && Math.hypot(nx - x, nz - z) > 0.05;
         powderSnowClaims = usable && unsupportedPowderSnow && !environment.ordinaryGround()
                 && (claimedGround || stationaryPowderSnowStep) ? powderSnowClaims + 1 : 0;
-        airGroundClaims = usable && airSampleMatches(environment, nx, ny, nz)
-                && environment.gravityAirborne() && claimedGround
-                ? airGroundClaims + 1 : 0;
+        countAirClaim(usable && airSampleMatches(environment, nx, ny, nz)
+                && environment.gravityAirborne() && claimedGround, environment);
         x = nx; y = ny; z = nz;
         lastDy = dy;
         initialized = true;
@@ -115,6 +115,30 @@ public final class SurfaceMotionSequence {
         if (wallRise >= 8) { wallRise = 0; return Anomaly.WALL_CLIMB; }
         if (liquidClaims >= 4) { liquidClaims = 0; return Anomaly.LIQUID_GROUND_CLAIM; }
         return Anomaly.NONE;
+    }
+
+    private void countAirClaim(boolean unsupportedClaim, MotionEnvironment.Snapshot environment) {
+        if (!unsupportedClaim) {
+            airGroundClaims = 0;
+            return;
+        }
+        // A stalled main thread can expose one snapshot to a whole packet burst.
+        // That is one collision observation, not repeated independent evidence.
+        if (environment.capturedAt() > lastAirCapture) {
+            lastAirCapture = environment.capturedAt();
+            airGroundClaims++;
+        }
+    }
+
+    private void countLiquidClaim(boolean unsupportedClaim, MotionEnvironment.Snapshot environment) {
+        if (!unsupportedClaim) {
+            liquidClaims = 0;
+            return;
+        }
+        if (environment.capturedAt() > lastLiquidCapture) {
+            lastLiquidCapture = environment.capturedAt();
+            liquidClaims++;
+        }
     }
 
     private boolean airSampleMatches(MotionEnvironment.Snapshot environment,
