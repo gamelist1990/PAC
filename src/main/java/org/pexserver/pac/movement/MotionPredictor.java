@@ -168,7 +168,7 @@ public final class MotionPredictor {
 
     private static double groundRetention(float blockFriction, float horizontalDrag,
                                           float velocityMultiplier) {
-        return (double) blockFriction * horizontalDrag * velocityMultiplier;
+        return (double) (blockFriction * horizontalDrag * velocityMultiplier);
     }
 
     static double maximumClientInputLength(float sneakingSpeed, float itemUseMultiplier) {
