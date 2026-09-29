@@ -253,7 +253,10 @@ public final class GroundMotionSequence {
                 && stuckVerticalMultiplier == environment.stuckVerticalMultiplier()
                 && blockSpeedFactor == environment.blockSpeedFactor()
                 && specialVerticalSurface == environment.specialVerticalSurface()
-                && takeoffJumpStrength == environment.jumpStrength()
+                // Jump strength belongs to the ordinary takeoff baseline. On
+                // honey/slime we deliberately do not arm that vertical model,
+                // so it must not prevent the independent horizontal model from stabilizing.
+                && (specialVerticalSurface || takeoffJumpStrength == environment.jumpStrength())
                 && Math.abs(movementSpeed - environment.movementSpeed()) < 1.0E-6;
         boolean sameGroundModel = sameGroundConditions && Math.abs(dy) <= 0.03;
         boolean smallCollisionStep = sameGroundConditions && Math.abs(dy) > 0.03 && Math.abs(dy) <= 0.12501
