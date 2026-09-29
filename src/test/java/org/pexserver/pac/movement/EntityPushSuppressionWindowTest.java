@@ -51,15 +51,41 @@ class EntityPushSuppressionWindowTest {
         assertFalse(result.flagged());
     }
 
-    @Test void movingInputAndHardCollisionAreNotPushSuppressionEvidence() {
+    @Test void stableMovingInputCanStillProveNoPush() {
+        var window = new EntityPushSuppressionWindow();
+        var environment = ground(1_000);
+        var forwardInput = new MotionPredictor.Input(
+                true, false, false, false, false, false, false);
+        var stableForward = new JavaInputCapture.Window(forwardInput, forwardInput);
+        var previous = new MotionPredictor.Motion(0, 0, 0);
+        boolean detected = false;
+
+        for (int sample = 0; sample < 5 && !detected; sample++) {
+            var noPush = MotionPredictor.predictGroundInputClient(previous,
+                    new MotionPredictor.Motion(0, 0, 0), environment.yaw(),
+                    environment.movementSpeed(), environment.groundFriction(),
+                    environment.horizontalDrag(), 1.0f,
+                    environment.itemUseMultiplier(), forwardInput).closest();
+            var result = window.accept(previous, noPush.dx(), noPush.dz(),
+                    0, 64, sample * 0.1, environment,
+                    push(0.05, 0, false), stableForward);
+            detected = result.flagged();
+            previous = noPush;
+        }
+
+        assertTrue(detected);
+    }
+
+    @Test void inputTransitionAndHardCollisionAreNotPushSuppressionEvidence() {
         var window = new EntityPushSuppressionWindow();
         var environment = ground(1_000);
         var previous = new MotionPredictor.Motion(0, 0, 0);
-        var forward = new JavaInputCapture.Window(new MotionPredictor.Input(
-                true, false, false, false, false, false, false), null);
+        var forward = new MotionPredictor.Input(
+                true, false, false, false, false, false, false);
+        var transitioning = new JavaInputCapture.Window(forward, IDLE);
 
         assertFalse(window.accept(previous, 0, 0,
-                0, 64, 0, environment, push(0.05, 0, false), forward).eligible());
+                0, 64, 0, environment, push(0.05, 0, false), transitioning).eligible());
         assertFalse(window.accept(previous, 0, 0,
                 0, 64, 0, environment, push(0.05, 0, true), IDLE_INPUT).eligible());
     }
