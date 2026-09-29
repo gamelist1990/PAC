@@ -26,6 +26,7 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerVelocityEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
+import org.bukkit.event.player.PlayerRiptideEvent;
 
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -87,6 +88,24 @@ public final class PacketChecks implements PacketListener, Listener {
     public void onCombatDamage(EntityDamageByEntityEvent event) {
         if (event.getFinalDamage() <= 0 || !(event.getEntity() instanceof org.bukkit.entity.Player player)) return;
         externalMotion.markCombatDamage(player.getUniqueId(), System.currentTimeMillis());
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onRiptide(PlayerRiptideEvent event) {
+        UUID uuid = event.getPlayer().getUniqueId();
+        if (!(plugin.checks().get("air-prediction") instanceof AirPredictionCheck airPrediction)
+                || !plugin.enabled(uuid, airPrediction) || plugin.isExempt(uuid)) return;
+        var origin = event.getPlayer().getLocation();
+        var prior = event.getPlayer().getVelocity();
+        var impulse = event.getVelocity();
+        // Paper fires PlayerRiptideEvent immediately before Player#push with
+        // this exact vanilla impulse. The client performs the riptide locally,
+        // so retain the server's unmodified final velocity as the authority.
+        airPrediction.onRiptide(uuid, origin.getX(), origin.getY(), origin.getZ(),
+                prior.getX() + impulse.getX(),
+                prior.getY() + impulse.getY(),
+                prior.getZ() + impulse.getZ(),
+                System.currentTimeMillis());
     }
 
     /**
