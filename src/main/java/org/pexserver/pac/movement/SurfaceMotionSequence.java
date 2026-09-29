@@ -2,12 +2,12 @@ package org.pexserver.pac.movement;
 
 /** Packet-order state for Java movement next to walls and liquid surfaces. */
 public final class SurfaceMotionSequence {
-    public enum Anomaly { NONE, WALL_CLIMB, LIQUID_GROUND_CLAIM, POWDER_SNOW_WALK }
+    public enum Anomaly { NONE, WALL_CLIMB, LIQUID_GROUND_CLAIM, POWDER_SNOW_WALK, AIR_GROUND_CLAIM }
     private double x, y, z;
     private boolean initialized;
     private long lastAt;
     private double lastDy;
-    private int wallRise, liquidClaims, powderSnowClaims;
+    private int wallRise, liquidClaims, powderSnowClaims, airGroundClaims;
 
     public Anomaly accept(boolean hasPosition, double packetX, double packetY, double packetZ,
                           boolean claimedGround, MotionEnvironment.Snapshot environment, long now) {
@@ -29,10 +29,17 @@ public final class SurfaceMotionSequence {
                     ? liquidClaims + 1 : 0;
             powderSnowClaims = usable && unsupportedPowderSnow
                     && !environment.ordinaryGround() && claimedGround ? powderSnowClaims + 1 : 0;
+            airGroundClaims = usable && airSampleMatches(environment, x, y, z)
+                    && environment.gravityAirborne() && claimedGround
+                    ? airGroundClaims + 1 : 0;
             lastAt = now;
             if (powderSnowClaims >= 4) {
                 powderSnowClaims = 0;
                 return Anomaly.POWDER_SNOW_WALK;
+            }
+            if (airGroundClaims >= 4) {
+                airGroundClaims = 0;
+                return Anomaly.AIR_GROUND_CLAIM;
             }
             if (liquidClaims >= 4) {
                 liquidClaims = 0;
@@ -45,7 +52,7 @@ public final class SurfaceMotionSequence {
         if (hasPosition && (!Double.isFinite(packetX) || !Double.isFinite(packetY)
                 || !Double.isFinite(packetZ))) {
             initialized = false;
-            wallRise = liquidClaims = powderSnowClaims = 0;
+            wallRise = liquidClaims = powderSnowClaims = airGroundClaims = 0;
             lastDy = 0;
             return Anomaly.NONE;
         }
@@ -70,14 +77,25 @@ public final class SurfaceMotionSequence {
                 && Math.hypot(nx - x, nz - z) > 0.05;
         powderSnowClaims = usable && unsupportedPowderSnow && !environment.ordinaryGround()
                 && (claimedGround || stationaryPowderSnowStep) ? powderSnowClaims + 1 : 0;
+        airGroundClaims = usable && airSampleMatches(environment, nx, ny, nz)
+                && environment.gravityAirborne() && claimedGround
+                ? airGroundClaims + 1 : 0;
         x = nx; y = ny; z = nz;
         lastDy = dy;
         initialized = true;
         lastAt = now;
         if (powderSnowClaims >= 4) { powderSnowClaims = 0; return Anomaly.POWDER_SNOW_WALK; }
+        if (airGroundClaims >= 4) { airGroundClaims = 0; return Anomaly.AIR_GROUND_CLAIM; }
         if (wallRise >= 8) { wallRise = 0; return Anomaly.WALL_CLIMB; }
         if (liquidClaims >= 4) { liquidClaims = 0; return Anomaly.LIQUID_GROUND_CLAIM; }
         return Anomaly.NONE;
+    }
+
+    private boolean airSampleMatches(MotionEnvironment.Snapshot environment,
+                                     double packetX, double packetY, double packetZ) {
+        return Math.abs(environment.x() - packetX) <= 0.35
+                && Math.abs(environment.y() - packetY) <= 0.20
+                && Math.abs(environment.z() - packetZ) <= 0.35;
     }
 
     /** The environment's general prediction radius is too broad for surface materials. */
