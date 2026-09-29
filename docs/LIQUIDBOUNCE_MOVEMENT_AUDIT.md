@@ -64,7 +64,7 @@ Status meanings:
 - regressions for HighJump, AirJump, ReverseStep and AntiLevitation
 - server-authoritative block speed-factor replay for Soul Sand/Honey and slime slipperiness enforcement
 - special bounce surfaces excluded from the ordinary jump envelope to avoid Slime/Honey false positives
-- bounded target hitbox history for reach; reported ping no longer grants raw geometric reach
+- target hitbox history reconstructed at ATTACK receive time; reported ping grants neither raw reach nor historical rewind
 - post-dismount VehicleBoost rejection plus conservative non-boat VehicleControl telemetry
 - vehicle heuristics are explicitly ineligible for automatic BAN/KICK
 - 26.2+ generalized Slime/Bed restitution and Honey jump-factor replay
@@ -77,7 +77,7 @@ Status meanings:
 ## Remaining high-value work
 
 1. **Non-living/custom vehicle physics** — current LiquidBounce default/high-speed VehicleControl and server-authority bypasses are covered, but minecart/custom-plugin vehicle motion remains conservative because server plugins may intentionally override vanilla transport rules.
-2. **Latency confidence** — the current LiquidBounce PingSpoof delays only incoming keepalive/ping packets. PAC no longer converts reported RTT into extra geometric reach and caps target-history rewind, but intentionally does not label latency itself as cheating because true network delay is observationally ambiguous.
+2. **Latency confidence** — the current LiquidBounce PingSpoof delays keepalive/ping traffic. PAC now gives reported RTT zero authority over reach distance and zero authority over target-history rewind; latency itself is still not labelled cheating because genuine network delay is observationally ambiguous.
 3. **Live calibration** — replay real vanilla 26.3 traces for Slime/Bed restitution, Honey takeoff, vehicle transitions and high-latency combat before making the conservative vehicle/reach signals more punitive.
 
 A module listed as “Not a violation by itself” is intentionally not fingerprinted. PAC should detect impossible outcomes, not the presence of a specific client.
