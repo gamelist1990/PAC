@@ -163,6 +163,8 @@ public final class VehicleMovementCheck extends AbstractCheck implements EventCh
         private static final long MIN_PACKET_GAP_MILLIS = 20;
         private static final long MAX_PACKET_GAP_MILLIS = 90;
         private static final double VERTICAL_RESIDUAL_TOLERANCE = 0.055;
+        private static final double CUMULATIVE_NOISE_FLOOR = 0.012;
+        private static final double CUMULATIVE_RESIDUAL_LIMIT = 0.05;
         private static final int REQUIRED_RESIDUALS = 3;
 
         private UUID vehicleId;
@@ -171,6 +173,7 @@ public final class VehicleMovementCheck extends AbstractCheck implements EventCh
         private long lastAt;
         private boolean haveDy;
         private int residuals;
+        private double residualBudget;
 
         AirFinding sample(UUID nextVehicleId, boolean eligible,
                           double targetY, double gravity, float verticalDrag, long now) {
@@ -209,7 +212,13 @@ public final class VehicleMovementCheck extends AbstractCheck implements EventCh
             residuals = residual > VERTICAL_RESIDUAL_TOLERANCE
                     ? Math.min(REQUIRED_RESIDUALS, residuals + 1)
                     : Math.max(0, residuals - 1);
-            return new AirFinding(residuals >= REQUIRED_RESIDUALS,
+            if (residual > CUMULATIVE_NOISE_FLOOR)
+                residualBudget += residual - CUMULATIVE_NOISE_FLOOR;
+            else
+                residualBudget = Math.max(0, residualBudget - 0.02);
+            boolean impossible = residuals >= REQUIRED_RESIDUALS
+                    || residualBudget >= CUMULATIVE_RESIDUAL_LIMIT;
+            return new AirFinding(impossible,
                     dy, expected, residual, residuals);
         }
 
@@ -219,6 +228,7 @@ public final class VehicleMovementCheck extends AbstractCheck implements EventCh
             lastAt = now;
             haveDy = false;
             residuals = 0;
+            residualBudget = 0;
         }
 
         void reset() {
@@ -226,6 +236,7 @@ public final class VehicleMovementCheck extends AbstractCheck implements EventCh
             lastAt = 0;
             haveDy = false;
             residuals = 0;
+            residualBudget = 0;
         }
     }
 
