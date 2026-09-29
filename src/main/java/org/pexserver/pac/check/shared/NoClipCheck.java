@@ -98,7 +98,7 @@ public final class NoClipCheck extends AbstractCheck implements EventCheck, List
             return;
         }
 
-        double tolerance = bounded("collision-tolerance", 0.10, 0.0, 0.30);
+        double tolerance = bounded("collision-tolerance", 0.03, 0.0, 0.30);
         NoClipGeometry.Hit hit = NoClipGeometry.unavoidableHit(body, dx, dy, dz,
                 scan.shapes(), tolerance, alreadyPhasing);
         if (hit == null) {
