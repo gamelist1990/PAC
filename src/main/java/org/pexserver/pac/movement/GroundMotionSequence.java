@@ -32,6 +32,7 @@ public final class GroundMotionSequence {
     private float sneakingSpeed = 0.3f, itemUseMultiplier = 1.0f;
     private float stuckHorizontalMultiplier = 1.0f;
     private float stuckVerticalMultiplier = 1.0f;
+    private float blockSpeedFactor = 1.0f;
     private float yaw;
     private boolean takeoffArmed;
     private double takeoffY;
@@ -72,6 +73,7 @@ public final class GroundMotionSequence {
             itemUseMultiplier = environment.itemUseMultiplier();
             stuckHorizontalMultiplier = environment.stuckHorizontalMultiplier();
             stuckVerticalMultiplier = environment.stuckVerticalMultiplier();
+            blockSpeedFactor = environment.blockSpeedFactor();
             takeoffJumpStrength = environment.jumpStrength();
         }
     }
@@ -182,7 +184,7 @@ public final class GroundMotionSequence {
         double legalGroundTravel = ordinary
                 ? MotionPredictor.maximumGroundTravelClient(previousMotion, environment.movementSpeed(),
                         environment.groundFriction(), environment.horizontalDrag(), sneakScale,
-                        environment.itemUseMultiplier(), physicsFrames)
+                        environment.itemUseMultiplier(), blockSpeedFactor, physicsFrames)
                         * environment.stuckHorizontalMultiplier() : 0;
         boolean stickyWeb = ordinary && environment.stuckHorizontalMultiplier() < 0.999f;
         double allowedHorizontal = ordinary
@@ -245,6 +247,7 @@ public final class GroundMotionSequence {
                 && itemUseMultiplier == environment.itemUseMultiplier()
                 && stuckHorizontalMultiplier == environment.stuckHorizontalMultiplier()
                 && stuckVerticalMultiplier == environment.stuckVerticalMultiplier()
+                && blockSpeedFactor == environment.blockSpeedFactor()
                 && takeoffJumpStrength == environment.jumpStrength()
                 && Math.abs(movementSpeed - environment.movementSpeed()) < 1.0E-6;
         boolean sameGroundModel = sameGroundConditions && Math.abs(dy) <= 0.03;
@@ -293,6 +296,7 @@ public final class GroundMotionSequence {
             itemUseMultiplier = environment.itemUseMultiplier();
             stuckHorizontalMultiplier = environment.stuckHorizontalMultiplier();
             stuckVerticalMultiplier = environment.stuckVerticalMultiplier();
+            blockSpeedFactor = environment.blockSpeedFactor();
         }
         // The server can already report on-ground on the final *upward* frame
         // of a jump onto a higher block. That frame is a landing, not a new
@@ -344,8 +348,9 @@ public final class GroundMotionSequence {
                     && verticalResponseOffset > 0.10
                     && responseComponentSuppressed(Math.abs(dy), Math.abs(impulse.y()));
             boolean impulseMismatch = horizontalImpulseSuppressed || verticalImpulseSuppressed;
-            if (response != null && response.offset() <= 0.08) previousMotion = response.finalVelocity();
-            else previousMotion = actual;
+            if (response != null && response.offset() <= 0.08)
+                previousMotion = postBlockSpeed(response.finalVelocity(), environment);
+            else previousMotion = postBlockSpeed(actual, environment);
             // Compare the first combat response before rebasing. Then use the
             // observed movement as the next baseline so one hit cannot cascade
             // into repeated flags from the same stale impulse.
@@ -368,15 +373,15 @@ public final class GroundMotionSequence {
                 if (replay != null) {
                     previousMotion = replay.finalVelocity();
                 } else {
-                    previousMotion = skippedFrames > 0
+                    previousMotion = postBlockSpeed(skippedFrames > 0
                             ? new MotionPredictor.Motion(dx / physicsFrames, dy / physicsFrames, dz / physicsFrames)
-                            : actual;
+                            : actual, environment);
                 }
                 return new Sample(true, stickyWeb || replay == null ? 0 : replay.offset(), abrupt,
                         horizontal, dy, false, impossibleTakeoff,
                         speedExcess, Math.max(skippedFrames, physicsFrames - 1));
             }
-            previousMotion = actual;
+            previousMotion = postBlockSpeed(actual, environment);
             return new Sample(false, 0, abrupt, horizontal, dy, false,
                     impossibleTakeoff, 0, skippedFrames);
         }
@@ -427,9 +432,18 @@ public final class GroundMotionSequence {
             if (replay != null && collisions.entityPushHorizontalAllowance() == 0)
                 nextMotion = replay.finalVelocity();
         }
-        previousMotion = nextMotion;
+        previousMotion = postBlockSpeed(nextMotion, environment);
         return new Sample(true, offset, abrupt, horizontal, dy, false,
                 impossibleTakeoff, speedExcess, 0);
+    }
+
+    private MotionPredictor.Motion postBlockSpeed(MotionPredictor.Motion motion,
+                                                  MotionEnvironment.Snapshot environment) {
+        if (motion == null || environment == null || !environment.ordinaryGround())
+            return motion;
+        float factor = environment.blockSpeedFactor();
+        if (!Float.isFinite(factor) || factor < 0 || factor > 4) factor = 1.0f;
+        return new MotionPredictor.Motion(motion.dx() * factor, motion.dy(), motion.dz() * factor);
     }
 
     private double predictGroundOffset(MotionPredictor.Motion previous, MotionPredictor.Motion actual,
