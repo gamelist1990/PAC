@@ -188,28 +188,39 @@ public final class VehicleMovementCheck extends AbstractCheck implements EventCh
                 || !Double.isFinite(targetZ))
             return false;
 
-        double dx = targetX - state.x();
-        double dy = targetY - state.y();
-        double dz = targetZ - state.z();
-        double horizontal = Math.hypot(dx, dz);
-        double velocityHorizontal = Math.hypot(state.velocityX(), state.velocityZ());
-
-        // The server sample can precede the packet by more than one physics
-        // step, so scale the current authoritative motion generously. This is
-        // intentionally far below LiquidBounce VehicleControl SprintSpeed
-        // (5H/2Y) but above ordinary horse/minecart/strider transitions.
-        double legalHorizontal = Math.max(PACKET_MIN_HORIZONTAL_LIMIT,
-                velocityHorizontal * 3.0 + 0.75);
-        double legalVertical = Math.max(PACKET_MIN_VERTICAL_LIMIT,
-                Math.abs(state.velocityY()) * 3.0 + 0.55);
-        boolean impossible = horizontal > legalHorizontal
-                || Math.abs(dy) > legalVertical;
-        if (!impossible) return false;
+        VehiclePacketFinding finding = packetFinding(
+                state.x(), state.y(), state.z(),
+                state.velocityX(), state.velocityY(), state.velocityZ(),
+                targetX, targetY, targetZ, state.type());
+        if (!finding.impossible()) return false;
 
         flagLimited(uuid, () -> plugin.flag(uuid, this, String.format(java.util.Locale.ROOT,
                 "vehicle packet displacement: type=%s horizontal=%.3f legal=%.3f dy=%.3f legalY=%.3f",
-                state.type(), horizontal, legalHorizontal, dy, legalVertical)));
+                finding.type(), finding.horizontal(), finding.legalHorizontal(),
+                finding.vertical(), finding.legalVertical())));
         return plugin.cancel(this, uuid);
+    }
+
+    static VehiclePacketFinding packetFinding(double serverX, double serverY, double serverZ,
+                                              double velocityX, double velocityY, double velocityZ,
+                                              double targetX, double targetY, double targetZ,
+                                              String type) {
+        if (!Double.isFinite(serverX) || !Double.isFinite(serverY) || !Double.isFinite(serverZ)
+                || !Double.isFinite(velocityX) || !Double.isFinite(velocityY) || !Double.isFinite(velocityZ)
+                || !Double.isFinite(targetX) || !Double.isFinite(targetY) || !Double.isFinite(targetZ))
+            return VehiclePacketFinding.skipped();
+        double dx = targetX - serverX;
+        double dy = targetY - serverY;
+        double dz = targetZ - serverZ;
+        double horizontal = Math.hypot(dx, dz);
+        double velocityHorizontal = Math.hypot(velocityX, velocityZ);
+        double legalHorizontal = Math.max(PACKET_MIN_HORIZONTAL_LIMIT,
+                velocityHorizontal * 3.0 + 0.75);
+        double legalVertical = Math.max(PACKET_MIN_VERTICAL_LIMIT,
+                Math.abs(velocityY) * 3.0 + 0.55);
+        return new VehiclePacketFinding(true,
+                horizontal > legalHorizontal || Math.abs(dy) > legalVertical,
+                horizontal, dy, legalHorizontal, legalVertical, type == null ? "" : type);
     }
 
     /** Poll controlled non-boat vehicles because not every impossible state emits VehicleMoveEvent. */
