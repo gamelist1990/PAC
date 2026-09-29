@@ -4,6 +4,14 @@ import java.util.Locale;
 
 /** Fits a continuous free-fall trajectory, including omitted position packets. */
 public final class AirGravityWindow {
+    /**
+     * Packet quantization and ground/air transition timing can make two fitted
+     * initial-velocity intervals miss by only a few thousandths. Do not turn
+     * that numerical edge into a hard Flight finding; real sustained Flight
+     * produces a much wider contradiction.
+     */
+    private static final double MIN_VELOCITY_CONTRADICTION = 0.01;
+
     private long lastAt;
     private double origin, gravity, drag, velocityFactor, gravityVelocity, factorSum, gravitySum;
     private double minimumVelocity, maximumVelocity;
@@ -84,11 +92,13 @@ public final class AirGravityWindow {
         double displacement = y - origin - gravitySum;
         minimumVelocity = Math.max(minimumVelocity, (displacement - 0.062) / factorSum);
         maximumVelocity = Math.min(maximumVelocity, (displacement + 0.062) / factorSum);
-        // Three consecutive physics intervals already overdetermine the one
-        // unknown initial velocity. The 0.062m bounds above include both
-        // endpoint packet quantization, so a disjoint interval is a hard
-        // contradiction rather than evidence that needs a long buffer.
-        return frames >= 3 && minimumVelocity > maximumVelocity;
+        // Three consecutive physics intervals overdetermine the one unknown
+        // initial velocity, but tiny disjoint intervals still occur at legal
+        // sprint-jump/landing boundaries because packet Y is quantized and the
+        // main-thread support snapshot can move one frame earlier/later.
+        // Require a meaningful contradiction before treating the fit as Flight.
+        return frames >= 3
+                && minimumVelocity - maximumVelocity > MIN_VELOCITY_CONTRADICTION;
     }
 
     public static boolean clearVerticalSweep(MotionCollisionSnapshot collisions,
