@@ -177,4 +177,29 @@ class SurfaceMotionSequenceTest {
     }
 
 
+    @Test void vulcanStyleHugeWallRiseIsRejectedImmediately() {
+        var sequence = new SurfaceMotionSequence();
+        sequence.accept(true, 0, 64.0, 0, false,
+                surface(64.0, 1000, true, false), 1000);
+
+        assertEquals(SurfaceMotionSequence.Anomaly.WALL_CLIP,
+                sequence.accept(true, 0, 73.6599696, 0, false,
+                        surface(64.0, 1050, true, false), 1050));
+    }
+
+    @Test void highServerJumpStrengthDoesNotLookLikeWallClip() {
+        var sequence = new SurfaceMotionSequence();
+        var boosted = new MotionEnvironment.Snapshot(false, true, false, false, false,
+                0, 0.1, 0, 64.0, 0, 1, 1000, true, false,
+                0.6f, 0.08, 0.91f, 0.98f, 2.0f, false, -1, true);
+        sequence.accept(true, 0, 64.0, 0, false, boosted, 1000);
+
+        var next = new MotionEnvironment.Snapshot(false, true, false, false, false,
+                0, 0.1, 0, 66.0, 0, 1, 1050, true, false,
+                0.6f, 0.08, 0.91f, 0.98f, 2.0f, false, -1, true);
+        assertEquals(SurfaceMotionSequence.Anomaly.NONE,
+                sequence.accept(true, 0, 66.0, 0, false, next, 1050));
+    }
+
+
 }
