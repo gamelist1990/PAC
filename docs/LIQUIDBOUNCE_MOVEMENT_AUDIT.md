@@ -18,11 +18,11 @@ Status meanings:
 | AntiLevitation | Covered | Active levitation / slow-falling state is included in air recurrence |
 | AvoidHazards | Not a violation by itself | Input/pathing automation |
 | BlockBounce | Covered | Surface jump factor and generalized restitution are sampled server-side; client-added jump motion on Honey/Slime/Bed exceeds the takeoff envelope |
-| BlockWalk | Partial | Unsupported-air ground claims, hover and collision checks cover impossible support; unusual thin-block transitions remain collision-dependent |
+| BlockWalk | Covered for default fake-support outcomes | Default Cobweb/Snow full-shape walking is checked through repeated unsupported-air ground claims, hover/gravity evidence and server collision geometry; a named regression covers fake support |
 | Clip | Covered | Swept-AABB noclip prevention, now enabled by default with auto-ban disabled |
 | ElytraFly | Covered | Elytra recurrence, collision replay and residual buffering |
-| ElytraRecast | Partial | Server controls accepted glide state; illegal flight after recast falls into air/Elytra checks |
-| EntityControl | Partial | Server vehicle authority helps, but non-boat rideables do not yet have a full PAC vehicle predictor |
+| ElytraRecast | Not a violation by itself | START_FALL_FLYING can be a legal client action. PAC judges the resulting server-accepted glide state and Elytra trajectory rather than fingerprinting repeated recast packets |
+| EntityControl | Covered for unauthorized movement | VEHICLE_MOVE is rejected when the player is not the server's controlling passenger; legal local saddle/control presentation alone is not treated as cheating |
 | ExtendedFirework | Covered | Vanilla firework acceleration replay remains active during boost |
 | Fly | Covered | Air recurrence, horizontal air candidates, gravity fit, hover and silence evidence |
 | Freeze | Not a violation by itself | Standing still / withholding optional movement can be legitimate; airborne silence is alert-only |
@@ -32,8 +32,8 @@ Status meanings:
 | LongJump | Covered | Takeoff, horizontal/air prediction, timer and server-velocity response models |
 | NoClip | Covered | Swept-AABB wall penetration rejection |
 | NoJumpDelay | Not a violation by itself | Precise repeated jump input is not illegal unless resulting movement violates physics |
-| NoPose | Partial | Pose transitions and collision dimensions are sampled; protocol/pose-only visual differences are not automatically punishable |
-| NoPush | Partial | Server velocity/knockback, entity-push allowance and water flow are modeled; not every vehicle/block push source has a dedicated replay |
+| NoPose | Not a violation by itself | A local pose/dimension presentation change is not punished on its own. Server pose/collision transitions are sampled and impossible movement still falls into collision/noclip prediction |
+| NoPush | Covered for current default entity/liquid paths | Fluid-current suppression and SINKING zero-Y behavior diverge from water prediction. Server-confirmed entity pushes now compare push-vs-no-push models across stable input and require four repeated high-confidence samples. Optional block/fishing-rod sources remain outcome-based |
 | NoSlow | Covered | Item use, sneaking, slowness attributes, water, powder snow and cobweb are modeled; Soul Sand/Honey block speed factors and Slime slipperiness are now replayed from server-authoritative terrain state |
 | NoWeb | Covered | Exact cobweb stuck multipliers plus sustained-speed evidence |
 | Parkour | Not a violation by itself | Edge jump automation is legal input |
@@ -50,7 +50,7 @@ Status meanings:
 | TerrainSpeed | Covered | Current nextgen IceSpeed, WaterSpeed and FastClimb paths are covered by friction/water prediction and climb-state enforcement |
 | TridentBoost | Covered | Paper Riptide event provides the authoritative vanilla impulse |
 | VehicleBoost | Covered | A dedicated post-dismount window rejects the current 2.0 horizontal / 1.0 vertical self-boost while preserving vehicle momentum and invalidating on external server motion |
-| VehicleControl | Covered for current default bypass paths | BoatFlight preserves evidence across Rehook, extreme VEHICLE_MOVE packets are rejected before vanilla applies them, unsaddled EntityControl packets are rejected using the server controlling-passenger state, and gravity-bound living vehicles validate vertical recurrence. Generic custom/non-living vehicle telemetry remains non-punitive |
+| VehicleControl | Covered for current default bypass paths | BoatFlight preserves evidence across Rehook, extreme VEHICLE_MOVE packets are rejected before vanilla applies them, unsaddled EntityControl packets are rejected using server controlling-passenger state, gravity-bound living vehicles validate vertical recurrence, and airborne minecarts use vanilla 0.04 gravity plus Bukkit's configured flying Y modifier. Generic custom vehicles remain non-punitive |
 
 ## Concrete hardening added in PR #6
 
@@ -76,8 +76,8 @@ Status meanings:
 
 ## Remaining high-value work
 
-1. **Non-living/custom vehicle physics** — current LiquidBounce default/high-speed VehicleControl and server-authority bypasses are covered, but minecart/custom-plugin vehicle motion remains conservative because server plugins may intentionally override vanilla transport rules.
-2. **Latency confidence** — the current LiquidBounce PingSpoof delays keepalive/ping traffic. PAC now gives reported RTT zero authority over reach distance and zero authority over target-history rewind; latency itself is still not labelled cheating because genuine network delay is observationally ambiguous.
-3. **Live calibration** — replay real vanilla 26.3 traces for Slime/Bed restitution, Honey takeoff, vehicle transitions and high-latency combat before making the conservative vehicle/reach signals more punitive.
+1. **Custom/non-vanilla vehicle horizontal physics** — current LiquidBounce VehicleControl authority, large packet motion, living-vehicle vertical recurrence and airborne minecart gravity are covered. Plugin-defined custom vehicles can intentionally exceed vanilla transport rules, so their generic telemetry remains alert-only rather than becoming a setback/BAN signal.
+2. **Optional NoPush sources** — default entity/liquid suppression and SINKING are modeled. BLOCKS and FISHING_ROD are still judged through their resulting collision/velocity behavior instead of a dedicated source-specific replay.
+3. **Live calibration** — replay real vanilla 26.3 traces for Slime/Bed restitution, Honey takeoff, entity-contact pushes, vehicle transitions and high-latency combat before making the conservative vehicle/reach signals more punitive.
 
 A module listed as “Not a violation by itself” is intentionally not fingerprinted. PAC should detect impossible outcomes, not the presence of a specific client.
