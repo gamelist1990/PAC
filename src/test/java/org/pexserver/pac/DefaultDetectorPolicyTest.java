@@ -9,6 +9,7 @@ import org.pexserver.pac.check.core.CheckRegistry;
 import org.pexserver.pac.check.core.CheckSettings;
 import org.pexserver.pac.check.core.PacketCheck;
 import org.pexserver.pac.check.core.PacketContext;
+import org.pexserver.pac.check.shared.VehicleMovementCheck;
 
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
@@ -48,6 +49,8 @@ class DefaultDetectorPolicyTest {
         assertEquals(PacPlugin.CONFIG_VERSION,
                 config.getInt(PacPlugin.CONFIG_VERSION_KEY));
         assertTrue(new BedrockPredictionCheck().automaticBanEligible());
+        assertFalse(new VehicleMovementCheck(null).automaticBanEligible());
+        assertFalse(new VehicleMovementCheck(null).automaticKickEligible());
         assertTrue(config.getBoolean("punishments.probation-enabled"));
     }
 
