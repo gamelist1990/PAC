@@ -197,6 +197,17 @@ class GroundMotionSequenceTest {
         assertEquals(0, result.offset(), 1e-10);
     }
 
+    @Test void liquidBounceHighJumpDefaultMotionIsAnImpossibleTakeoff() {
+        var sequence = new GroundMotionSequence();
+        sequence.accept(true, true, 0, 64, 0, 0, ground(0, 1, 1000), 1000);
+
+        var sample = sequence.accept(true, false, 0, 64.8, 0.25, 0,
+                air(64.8, 2, 1050), 1050);
+
+        assertTrue(sample.impossibleTakeoff(),
+                "LiquidBounce HighJump's default 0.8Y launch must exceed the server jump-strength envelope");
+    }
+
     @Test void shortUpwardStepWithoutCollisionIsAnImpossibleTakeoff() {
         var sequence = new GroundMotionSequence();
         sequence.accept(true, true, 0, 64, 0, 0, ground(0, 1, 1000), 1000);
