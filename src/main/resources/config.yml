@@ -80,6 +80,13 @@ detectors:
     hover-ticks: 8
     fast-ticks: 4
     alert-score-threshold: 1
+  vehicle-movement:
+    # Post-dismount VehicleBoost is rejected. Generic non-boat vehicle anomalies
+    # are alert-only because servers may intentionally implement custom vehicles.
+    enabled: true
+    ban-enabled: false
+    cancel: true
+    alert-score-threshold: 1
   fast-place:
     enabled: true
     ban-enabled: true
