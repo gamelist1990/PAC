@@ -8,9 +8,9 @@ import org.pexserver.pac.packet.JavaInputCapture;
  * <p>The server already samples the exact vanilla horizontal push vector from
  * nearby pushable entities. We compare the same movement packet against two
  * otherwise-identical client simulations: one with that server-confirmed push
- * and one without it. Evidence is accepted only when the player has neutral
- * movement input and collision geometry proves that a wall did not absorb the
- * push.</p>
+ * and one without it. Evidence is accepted only while the captured input is
+ * stable across the packet boundary and collision geometry proves that a wall
+ * did not absorb the push.</p>
  */
 public final class EntityPushSuppressionWindow {
     private static final double MINIMUM_PUSH = 0.025;
@@ -47,7 +47,8 @@ public final class EntityPushSuppressionWindow {
         }
 
         MotionPredictor.Input input = inputs.current();
-        if (input.forwardAxis() != 0 || input.strafeAxis() != 0 || input.jump()) {
+        MotionPredictor.Input previousInput = inputs.previous();
+        if (input.jump() || previousInput != null && !previousInput.equals(input)) {
             reset();
             return Sample.skipped();
         }
