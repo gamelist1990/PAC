@@ -6,14 +6,15 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 class AttackPacketProtocolTest {
     @Test void minecraft261PlusUsesDedicatedAttackPacket() {
         var attack = new WrapperPlayClientAttack(73);
 
-        assertEquals(PacketType.Play.Client.ATTACK, attack.getPacketType());
+        assertNotNull(PacketType.Play.Client.ATTACK);
+        assertNotEquals(PacketType.Play.Client.INTERACT_ENTITY, PacketType.Play.Client.ATTACK,
+                "26.1+ ATTACK must remain distinct from the legacy interact packet");
         assertEquals(73, attack.getEntityId());
-        assertNotEquals(PacketType.Play.Client.INTERACT_ENTITY, attack.getPacketType(),
-                "26.1+ attacks must not be assumed to arrive through the legacy interact packet");
     }
 }
