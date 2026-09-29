@@ -22,18 +22,61 @@ public final class ExternalMotionTracker {
         private final ArrayDeque<Impulse> updates = new ArrayDeque<>();
     }
 
+    private static final class CombatDamageWindow {
+        private final long damagedAt;
+        private long firstVelocityAt = -1;
+        private double x, y, z;
+
+        private CombatDamageWindow(long damagedAt) {
+            this.damagedAt = damagedAt;
+        }
+
+        synchronized boolean recent(long now) {
+            return now >= damagedAt && now - damagedAt <= 500;
+        }
+
+        synchronized boolean matchesReplacement(double nextX, double nextY, double nextZ, long now) {
+            if (!recent(now)) return false;
+            if (firstVelocityAt < 0) {
+                firstVelocityAt = now;
+                x = nextX;
+                y = nextY;
+                z = nextZ;
+                return true;
+            }
+            // Bukkit's PlayerVelocityEvent and the eventual velocity packet expose
+            // the same knockback twice. Keep only near-identical duplicates tagged
+            // as combat; a later distinct setVelocity belongs to plugin/server motion.
+            return now - firstVelocityAt <= 200
+                    && Math.abs(nextX - x) <= 0.003
+                    && Math.abs(nextY - y) <= 0.003
+                    && Math.abs(nextZ - z) <= 0.003;
+        }
+    }
+
     private final AtomicLong nextSequence = new AtomicLong();
     private final ConcurrentHashMap<UUID, History> histories = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<UUID, Long> recentCombatDamage = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<UUID, CombatDamageWindow> recentCombatDamage = new ConcurrentHashMap<>();
 
     /** Tags only server velocity updates that follow actual entity damage. */
     public void markCombatDamage(UUID uuid, long now) {
-        if (uuid != null) recentCombatDamage.put(uuid, now);
+        if (uuid != null) recentCombatDamage.put(uuid, new CombatDamageWindow(now));
     }
 
     public boolean recentCombatDamage(UUID uuid, long now) {
-        Long damagedAt = recentCombatDamage.get(uuid);
-        return damagedAt != null && now >= damagedAt && now - damagedAt <= 500;
+        CombatDamageWindow window = recentCombatDamage.get(uuid);
+        if (window == null) return false;
+        if (window.recent(now)) return true;
+        recentCombatDamage.remove(uuid, window);
+        return false;
+    }
+
+    boolean velocityIsCombatKnockback(UUID uuid, double x, double y, double z, long now) {
+        CombatDamageWindow window = recentCombatDamage.get(uuid);
+        if (window == null) return false;
+        boolean matches = window.matchesReplacement(x, y, z, now);
+        if (!window.recent(now)) recentCombatDamage.remove(uuid, window);
+        return matches;
     }
 
     public void velocity(UUID uuid, double x, double y, double z, long now) {
@@ -49,7 +92,9 @@ public final class ExternalMotionTracker {
         History history = histories.computeIfAbsent(uuid, ignored -> new History());
         synchronized (history) {
             prune(history, now);
-            boolean combatKnockback = recentCombatDamage(uuid, now);
+            boolean combatKnockback = additive
+                    ? recentCombatDamage(uuid, now)
+                    : velocityIsCombatKnockback(uuid, x, y, z, now);
             history.updates.addLast(new Impulse(nextSequence.incrementAndGet(), x, y, z, now,
                     additive, combatKnockback));
             while (history.updates.size() > MAX_PENDING_UPDATES) history.updates.removeFirst();

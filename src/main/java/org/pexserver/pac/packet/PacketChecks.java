@@ -161,7 +161,7 @@ public final class PacketChecks implements PacketListener, Listener {
                                     long now, boolean outbound) {
         if (!Double.isFinite(x) || !Double.isFinite(y) || !Double.isFinite(z)) return;
         double horizontal = Math.hypot(x, z);
-        if (externalMotion.recentCombatDamage(uuid, now)) {
+        if (externalMotion.velocityIsCombatKnockback(uuid, x, y, z, now)) {
             serverMotionGrants.remove(uuid);
             return;
         }

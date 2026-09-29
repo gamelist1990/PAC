@@ -34,4 +34,30 @@ class ExternalMotionTrackerTest {
         assertTrue(folded.combatKnockback());
         assertFalse(folded.additive());
     }
+
+    @Test void distinctPluginVelocityAfterKnockbackIsNotRelabeledAsCombat() {
+        ExternalMotionTracker tracker = new ExternalMotionTracker();
+        UUID uuid = UUID.randomUUID();
+        tracker.markCombatDamage(uuid, 1_000);
+
+        tracker.velocity(uuid, 0.38, 0.40, 0.04, 1_010);
+        long knockbackSequence = tracker.current(uuid, 1_010).sequence();
+        assertTrue(tracker.current(uuid, 1_010).combatKnockback());
+
+        // PacketEvents can observe the same knockback a second time after Bukkit.
+        tracker.velocity(uuid, 0.3801, 0.4001, 0.0401, 1_025);
+        assertTrue(tracker.current(uuid, 1_025).combatKnockback());
+
+        // AirDash/Paper setVelocity shortly after the hit is a new authoritative
+        // replacement, not another copy of the combat knockback.
+        tracker.velocity(uuid, 0.80, 0.30, 0, 1_080);
+        ExternalMotionTracker.Impulse airDash = tracker.current(uuid, 1_080);
+        assertFalse(airDash.combatKnockback());
+
+        ExternalMotionTracker.Impulse folded = tracker.since(uuid, knockbackSequence, 1_080);
+        assertEquals(0.80, folded.x(), 1.0e-12);
+        assertEquals(0.30, folded.y(), 1.0e-12);
+        assertFalse(folded.combatKnockback());
+        assertFalse(folded.additive());
+    }
 }
