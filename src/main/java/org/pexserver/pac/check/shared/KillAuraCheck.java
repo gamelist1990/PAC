@@ -282,14 +282,13 @@ public final class KillAuraCheck extends AbstractCheck implements PacketCheck, E
         if (event.isCancelled() || event.getFinalDamage() <= 0
                 || event.getCause() == EntityDamageEvent.DamageCause.ENTITY_SWEEP_ATTACK
                 || !(event.getDamager() instanceof Player player)) return;
-        // Bukkit reports mobs, players and other attackable entities through
-        // this event. Keep the combat pipeline target-agnostic so mob combat
-        // cannot fall outside the same aim and hitbox checks.
+
         Entity victim = event.getEntity();
         UUID uuid = player.getUniqueId();
         if (player.isDead() || deadPlayers.contains(uuid) || !plugin.enabled(uuid, this)
                 || plugin.isExempt(uuid) || !combatMode(player)) return;
 
+        boolean bedrock = plugin.isBedrockPlayer(uuid);
         CombatState state = combat.computeIfAbsent(uuid, ignored -> new CombatState());
         long now = System.currentTimeMillis();
         int tick = Bukkit.getCurrentTick();
@@ -297,9 +296,22 @@ public final class KillAuraCheck extends AbstractCheck implements PacketCheck, E
         float attackPitch;
         boolean packetViewMatched = false;
         synchronized (state) {
+            // Touch and motion-controller/VR Bedrock clients do not have the same
+            // crosshair guarantees as keyboard/mouse and gamepad. The strict
+            // KillAura geometry/rotation types intentionally do not judge them.
+            if (bedrock && !supportsBedrockInputMode(state.bedrockInputMode)) {
+                state.resetStrictEvidence();
+                return;
+            }
+
             PendingAttack pending = state.pendingAttack;
-            boolean matchedPacket = pending != null && pending.entityId() == victim.getEntityId()
-                    && now >= pending.at() && now - pending.at() <= ATTACK_LOOK_MAX_AGE_MILLIS;
+            boolean recentPacket = pending != null && now >= pending.at()
+                    && now - pending.at() <= ATTACK_LOOK_MAX_AGE_MILLIS;
+            // Bedrock's inventory transaction exposes a runtime entity id, not
+            // Bukkit's Java entity id. A recent bridge attack is therefore
+            // correlated by time; Java can require the exact entity id.
+            boolean matchedPacket = recentPacket
+                    && (bedrock || pending.entityId() == victim.getEntityId());
             if (matchedPacket && pending.hasLook()) {
                 attackYaw = pending.yaw();
                 attackPitch = pending.pitch();
@@ -312,43 +324,80 @@ public final class KillAuraCheck extends AbstractCheck implements PacketCheck, E
                 attackPitch = player.getLocation().getPitch();
             }
             state.pendingAttack = null;
-            // Fallback for Bedrock bridges which do not have a Java attack packet.
             if (!matchedPacket) markAttack(state, now);
             state.combatPatterns.confirmedHit(victim.getEntityId(), now);
             if (plugin.cancel(this, uuid) && now < state.aimConfirmedUntil) event.setCancelled(true);
         }
 
-        // Wurst Killaura's optional Check line of sight defaults off. It aims at
-        // the target AABB center with a look packet and immediately attacks.
-        // Correlate that exact packet rotation with the successful hit, then
-        // compare the ray against server block collision shapes on the main
-        // thread. This avoids querying Bukkit world state from the packet thread.
         if (packetViewMatched && victim.isValid()) {
             var eyeLocation = player.getEyeLocation();
             var eye = eyeLocation.toVector();
             var targetBox = victim.getBoundingBox();
-            double targetDistance = CombatViewRay.intersectionDistance(eye, attackYaw, attackPitch,
-                    targetBox, 0.08, 6.0);
+            double expansion = attackViewExpansion(player, victim);
+            double maxDistance = attackViewDistance(player);
+            double targetDistance = CombatViewRay.intersectionDistance(
+                    eye, attackYaw, attackPitch, targetBox, expansion, maxDistance);
+            boolean viewMiss = !Double.isFinite(targetDistance);
+            boolean confirmedViewMiss;
+            int viewMissStreak;
+            synchronized (state) {
+                confirmedViewMiss = state.viewMisses.record(viewMiss, tick);
+                viewMissStreak = state.viewMisses.count();
+            }
+            if (confirmedViewMiss) {
+                String detail = String.format(Locale.ROOT,
+                        "confirmed attack view repeatedly missed target AABB: target=%s entityId=%d yaw=%.2f pitch=%.2f expansion=%.3f streak=%d",
+                        victim.getType(), victim.getEntityId(), attackYaw, attackPitch,
+                        expansion, viewMissStreak);
+                Map<String, Double> metrics = Map.of(
+                        "attack_yaw", (double) attackYaw,
+                        "attack_pitch", (double) attackPitch,
+                        "hitbox_expansion", expansion,
+                        "view_miss_streak", (double) viewMissStreak,
+                        "ping_millis", (double) Math.max(0, player.getPing()));
+                reportType(uuid, state, KillAuraType.A, "attack ray", detail, metrics, 3);
+                if (plugin.cancel(this, uuid)) event.setCancelled(true);
+            }
+
             if (Double.isFinite(targetDistance)) {
                 var obstruction = player.getWorld().rayTraceBlocks(eyeLocation,
                         CombatViewRay.direction(attackYaw, attackPitch), targetDistance + 0.12,
                         FluidCollisionMode.NEVER, true);
                 double blockDistance = obstruction == null ? Double.NaN
                         : obstruction.getHitPosition().distance(eye);
-                if (CombatViewRay.blockedBeforeTarget(blockDistance, targetDistance, 0.12)) {
-                    var hitBlock = obstruction.getHitBlock();
+                boolean blocked = CombatViewRay.blockedBeforeTarget(
+                        blockDistance, targetDistance, 0.12);
+                boolean confirmedWall;
+                int wallStreak;
+                synchronized (state) {
+                    confirmedWall = state.wallHits.record(blocked, tick);
+                    wallStreak = state.wallHits.count();
+                }
+                if (confirmedWall) {
+                    var hitBlock = obstruction == null ? null : obstruction.getHitBlock();
                     String detail = String.format(Locale.ROOT,
-                            "attack packet ray was blocked before target AABB: block=%s block-distance=%.3f target-distance=%.3f yaw=%.2f pitch=%.2f",
-                            hitBlock == null ? "unknown" : hitBlock.getType(), blockDistance, targetDistance,
-                            attackYaw, attackPitch);
+                            "attack ray repeatedly crossed a blocking collision before target AABB: block=%s block-distance=%.3f target-distance=%.3f streak=%d",
+                            hitBlock == null ? "unknown" : hitBlock.getType(),
+                            blockDistance, targetDistance, wallStreak);
                     Map<String, Double> metrics = Map.of(
                             "block_distance", blockDistance,
                             "target_aabb_distance", targetDistance,
                             "attack_yaw", (double) attackYaw,
-                            "attack_pitch", (double) attackPitch);
-                    flagLimited(uuid, () -> plugin.flag(uuid, this, detail, metrics, 2));
+                            "attack_pitch", (double) attackPitch,
+                            "wall_hit_streak", (double) wallStreak);
+                    reportType(uuid, state, KillAuraType.B, "through-wall attack",
+                            detail, metrics, 4);
                     if (plugin.cancel(this, uuid)) event.setCancelled(true);
                 }
+            } else {
+                synchronized (state) {
+                    state.wallHits.reset();
+                }
+            }
+        } else {
+            synchronized (state) {
+                state.viewMisses.reset();
+                state.wallHits.reset();
             }
         }
 
@@ -357,17 +406,20 @@ public final class KillAuraCheck extends AbstractCheck implements PacketCheck, E
         targets.add(victim.getUniqueId());
         bursts.put(uuid, new Burst(tick, targets));
         if (targets.size() >= 3) {
-            flagLimited(uuid, () -> plugin.flag(uuid, this, "three distinct melee targets in one tick"));
+            Map<String, Double> metrics = Map.of(
+                    "same_tick_targets", (double) targets.size(),
+                    "server_tick", (double) tick);
+            reportType(uuid, state, KillAuraType.D, "multi-target burst",
+                    "three or more distinct melee victims in one server tick",
+                    metrics, 4);
             if (plugin.cancel(this, uuid)) event.setCancelled(true);
         }
 
-        // Mobile clients can attack outside the camera ray in the forward
-        // hemisphere. Only reject attacks where the complete target AABB is
-        // behind the yaw captured with the actual attack packet.
         var eye = player.getEyeLocation().toVector();
         double maxForwardProjection = CombatViewRay.maximumHorizontalProjection(
                 eye, attackYaw, victim.getBoundingBox());
-        boolean rearHit = CombatViewRay.entirelyBehind(eye, attackYaw, victim.getBoundingBox(), 0.03);
+        boolean rearHit = CombatViewRay.entirelyBehind(
+                eye, attackYaw, victim.getBoundingBox(), 0.03);
         boolean confirmedRearHit;
         int rearStreak;
         synchronized (state) {
@@ -376,15 +428,31 @@ public final class KillAuraCheck extends AbstractCheck implements PacketCheck, E
         }
         if (confirmedRearHit) {
             String detail = String.format(Locale.ROOT,
-                    "consecutive attacks behind facing hemisphere target=%s entityId=%d yaw=%.1f aabb-forward=%.3f streak=%d",
-                    victim.getType(), victim.getEntityId(), attackYaw, maxForwardProjection, rearStreak);
+                    "consecutive confirmed hits with complete target AABB behind facing plane: target=%s entityId=%d yaw=%.1f aabb-forward=%.3f streak=%d",
+                    victim.getType(), victim.getEntityId(), attackYaw,
+                    maxForwardProjection, rearStreak);
             Map<String, Double> metrics = Map.of(
                     "target_aabb_forward_projection", maxForwardProjection,
                     "attack_yaw", (double) attackYaw,
                     "rear_attack_streak", (double) rearStreak);
-            flagLimited(uuid, () -> plugin.flag(uuid, this, detail, metrics));
+            reportType(uuid, state, KillAuraType.A, "rear attack",
+                    detail, metrics, 3);
             if (plugin.cancel(this, uuid)) event.setCancelled(true);
         }
+    }
+
+    private static double attackViewExpansion(Player player, Entity victim) {
+        double pingTicks = Math.min(6.0, Math.max(0, player.getPing()) / 50.0);
+        double targetSpeed = victim.getVelocity().length();
+        if (!Double.isFinite(targetSpeed)) targetSpeed = 0;
+        return 0.12 + Math.min(0.45, Math.max(0, targetSpeed) * pingTicks);
+    }
+
+    private static double attackViewDistance(Player player) {
+        var attribute = player.getAttribute(Attribute.ENTITY_INTERACTION_RANGE);
+        double base = attribute == null ? 3.0 : attribute.getValue();
+        double pingSeconds = Math.max(0, player.getPing()) / 1000.0;
+        return base + 0.20 + Math.min(0.65, pingSeconds * 2.5);
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
