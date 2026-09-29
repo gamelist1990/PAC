@@ -53,4 +53,25 @@ class NoClipGeometryTest {
         assertNotNull(NoClipGeometry.unavoidableHit(PLAYER, 2, 0, 0,
                 List.of(slab), 0.10, false));
     }
+    @Test void detectsSmallDownwardPhaseBeyondCollisionTolerance() {
+        NoClipGeometry.Aabb body =
+                new NoClipGeometry.Aabb(-0.3, 1.0, -0.3, 0.3, 2.8, 0.3);
+        NoClipGeometry.Aabb floor =
+                new NoClipGeometry.Aabb(-1, 0, -1, 1, 1, 1);
+
+        assertNotNull(NoClipGeometry.unavoidableHit(body, 0, -0.07840000152, 0,
+                List.of(floor), 0.03, false));
+    }
+
+    @Test void tinyContactJitterInsideToleranceIsIgnored() {
+        NoClipGeometry.Aabb body =
+                new NoClipGeometry.Aabb(-0.3, 1.0, -0.3, 0.3, 2.8, 0.3);
+        NoClipGeometry.Aabb floor =
+                new NoClipGeometry.Aabb(-1, 0, -1, 1, 1, 1);
+
+        assertNull(NoClipGeometry.unavoidableHit(body, 0, -0.02, 0,
+                List.of(floor), 0.03, false));
+    }
+
+
 }
