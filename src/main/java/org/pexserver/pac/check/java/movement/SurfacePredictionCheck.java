@@ -4,6 +4,7 @@ import org.pexserver.pac.check.core.AbstractCheck;
 import org.pexserver.pac.check.core.PacketCheck;
 import org.pexserver.pac.check.core.PacketContext;
 import org.pexserver.pac.movement.SurfaceMotionSequence;
+import org.pexserver.pac.movement.StableGroundTakeoffWindow;
 
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -11,6 +12,7 @@ import java.util.concurrent.ConcurrentHashMap;
 /** Covers motion that ordinary clear-ground and clear-air models cannot evaluate. */
 public final class SurfacePredictionCheck extends AbstractCheck implements PacketCheck {
     private final ConcurrentHashMap<UUID, SurfaceMotionSequence> states = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<UUID, StableGroundTakeoffWindow> takeoffs = new ConcurrentHashMap<>();
     @Override public String key() { return "surface-prediction"; }
     @Override public boolean supportsBedrock() { return false; }
 
@@ -18,22 +20,47 @@ public final class SurfacePredictionCheck extends AbstractCheck implements Packe
         if (context.event().isCancelled()) return;
         if (context.timingUncertain()) {
             states.remove(context.uuid());
+            takeoffs.remove(context.uuid());
             return;
         }
         if (context.plugin().environment().authorizedFlightMovement(context.uuid())) {
             states.remove(context.uuid());
+            takeoffs.remove(context.uuid());
             return;
         }
         if (context.externalImpulse() != null
                 || context.plugin().serverMotionGrant(context.uuid()) != null) {
             states.remove(context.uuid());
+            takeoffs.remove(context.uuid());
             return;
         }
         SurfaceMotionSequence state = states.computeIfAbsent(context.uuid(), ignored -> new SurfaceMotionSequence());
+        StableGroundTakeoffWindow takeoff = takeoffs.computeIfAbsent(
+                context.uuid(), ignored -> new StableGroundTakeoffWindow());
         var location = context.location();
+        long now = System.currentTimeMillis();
+        StableGroundTakeoffWindow.Sample takeoffSample;
+        synchronized (takeoff) {
+            var environment = context.plugin().environment();
+            takeoffSample = takeoff.accept(context.flying().hasPositionChanged(),
+                    location.getX(), location.getY(), location.getZ(),
+                    environment.get(context.uuid()), environment.groundState(context.uuid()),
+                    environment.groundTakeoffVelocity(context.uuid()),
+                    environment.maxStepHeight(context.uuid()),
+                    context.serverTiming().delayed(), now);
+        }
+        if (takeoffSample.excessive()) {
+            flagLimited(context, () -> String.format(java.util.Locale.ROOT,
+                    "stable-ground takeoff exceeded vanilla jump/step envelope: rise=%.3f jump=%.3f step=%.3f",
+                    takeoffSample.rise(), takeoffSample.allowedJump(), takeoffSample.allowedStep()));
+            if (context.plugin().cancel(this, context.uuid())) {
+                context.cancel(this);
+                context.plugin().correctJavaToSafeGround(context.uuid());
+            }
+            return;
+        }
         SurfaceMotionSequence.Anomaly anomaly;
         synchronized (state) {
-            long now = System.currentTimeMillis();
             var powderSnow = context.plugin().environment().powderSnow(context.uuid());
             boolean unsupportedPowderSnow = !context.plugin().isBedrockPlayer(context.uuid())
                     && powderSnow != null && powderSnow.unauthorized()
@@ -57,5 +84,9 @@ public final class SurfacePredictionCheck extends AbstractCheck implements Packe
         }
     }
 
-    @Override public void forget(UUID uuid) { super.forget(uuid); states.remove(uuid); }
+    @Override public void forget(UUID uuid) {
+        super.forget(uuid);
+        states.remove(uuid);
+        takeoffs.remove(uuid);
+    }
 }
