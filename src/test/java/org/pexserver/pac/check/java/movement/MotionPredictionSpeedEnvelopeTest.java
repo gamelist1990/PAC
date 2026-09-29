@@ -17,6 +17,10 @@ class MotionPredictionSpeedEnvelopeTest {
         assertFalse(flatMovementFlags(0.28));
     }
 
+    @Test void mildFlatFlightCannotBankToleranceAcrossGroundModelRebases() {
+        assertTrue(flatMovementFlags(0.35));
+    }
+
     private boolean flatMovementFlags(double speed) {
         var sequence = new GroundMotionSequence();
         var envelope = new SustainedSpeedEnvelope();

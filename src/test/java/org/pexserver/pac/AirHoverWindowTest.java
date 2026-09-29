@@ -7,6 +7,17 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AirHoverWindowTest {
+    @Test void terrainEligibilityMustNotJoinSeparateJumpApexesIntoHover() {
+        var window = new AirHoverWindow();
+        double y = 64, velocity = 0;
+        for (int tick = 0; tick < 200; tick++) {
+            velocity = y == 64 ? 0.42f : (velocity - 0.08) * 0.98f;
+            y = Math.max(64, y + velocity);
+            // Near terrain only the top of each jump may have clear air.
+            assertFalse(window.sample(y > 65, y, 1000 + tick * 50L),
+                    "separate jump apexes are not stationary flight: " + tick);
+        }
+    }
     @Test void stationaryFlightIsDetectedFromRepeatedSamples() {
         var window = new AirHoverWindow();
         assertFalse(window.sample(true, 80, 1_000));

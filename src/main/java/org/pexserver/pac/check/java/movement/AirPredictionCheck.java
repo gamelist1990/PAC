@@ -10,7 +10,9 @@ import org.pexserver.pac.movement.AirMotionSequence;
 import org.pexserver.pac.movement.ElytraMotionSequence;
 import org.pexserver.pac.movement.AirSilenceWindow;
 import org.pexserver.pac.movement.AirHoverWindow;
+import org.pexserver.pac.movement.AirGravityWindow;
 import org.pexserver.pac.movement.PredictionCorrectionLock;
+import org.pexserver.pac.packet.ExternalMotionTracker;
 
 import java.util.Locale;
 import java.util.UUID;
@@ -24,8 +26,10 @@ public final class AirPredictionCheck extends AbstractCheck implements PacketChe
         final ElytraMotionSequence elytraSequence = new ElytraMotionSequence();
         final AirSilenceWindow silence = new AirSilenceWindow();
         final AirHoverWindow hover = new AirHoverWindow();
+        final AirGravityWindow gravityWindow = new AirGravityWindow();
         final PredictionCorrectionLock correctionLock = new PredictionCorrectionLock();
         long lastHoverCorrectionAt;
+        long serverMotionSequence;
         long lastAttackAt;
         int attackFrames;
         double verticalBuffer, horizontalBuffer, elytraBuffer;
@@ -42,17 +46,13 @@ public final class AirPredictionCheck extends AbstractCheck implements PacketChe
         // A preceding PAC detector may already have cancelled this event. Air
         // prediction still needs every ordered coordinate; dropping one breaks
         // velocity continuity and lets repeated Flight setbacks erase evidence.
-        if (context.timingUncertain()) {
+        var serverMotion = context.plugin().serverMotionGrant(context.uuid());
+        if (context.timingUncertain() && context.externalImpulse() == null && serverMotion == null) {
             states.remove(context.uuid());
             return;
         }
-        if (context.plugin().environment().authorizedFlightMovement(context.uuid())) {
-            states.remove(context.uuid());
-            return;
-        }
-        if (context.plugin().serverMotionGrant(context.uuid()) != null) {
-            // A server-set velocity can reach the client after a position packet.
-            // Ground's momentum envelope still checks the launched movement.
+        if (context.plugin().environment().authorizedFlightMovement(context.uuid())
+                && context.externalImpulse() == null && serverMotion == null) {
             states.remove(context.uuid());
             return;
         }
@@ -63,6 +63,36 @@ public final class AirPredictionCheck extends AbstractCheck implements PacketChe
             state.sequence.timing(context.serverTiming());
             state.elytraSequence.timing(context.serverTiming());
             long now = System.currentTimeMillis();
+            boolean hasPosition = context.flying().hasPositionChanged();
+            // Velocity updates must be applied on the first coordinate packet:
+            // AirMotionSequence buffers look-only packets before it reaches its
+            // impulse handling. Consuming a grant on a rotation-only packet
+            // would silently discard the launch vector before the 3D replay.
+            ExternalMotionTracker.Impulse motionImpulse = hasPosition
+                    ? context.externalImpulse() : null;
+            if (hasPosition && serverMotion != null) {
+                boolean alreadyApplied = state.serverMotionSequence == serverMotion.sequence();
+                if (motionImpulse == null && !alreadyApplied) {
+                    // PlayerVelocityEvent can arrive without a corresponding
+                    // outgoing velocity packet on some Paper/plugin paths.
+                    // The grant retains the exact vector so the first response
+                    // still enters the physical simulation as its initial state.
+                    motionImpulse = new ExternalMotionTracker.Impulse(serverMotion.sequence(),
+                            serverMotion.velocityX(), serverMotion.velocityY(), serverMotion.velocityZ(),
+                            now, false, false);
+                } else if (motionImpulse != null && alreadyApplied
+                        && sameVector(motionImpulse, serverMotion)) {
+                    // The packet listener can observe a velocity after the
+                    // Bukkit event fallback already seeded the same update.
+                    // Do not apply that vector to the predictor twice.
+                    motionImpulse = null;
+                }
+                state.serverMotionSequence = serverMotion.sequence();
+            }
+            if (context.timingUncertain() && motionImpulse == null) {
+                states.remove(context.uuid(), state);
+                return;
+            }
             var location = context.location();
             // The packet stream is the local player's present-time simulation.
             // Rewinding it by half the RTT selects stale snapshots and disables
@@ -75,7 +105,7 @@ public final class AirPredictionCheck extends AbstractCheck implements PacketChe
                 states.remove(context.uuid(), state);
                 return;
             }
-            if (context.externalImpulse() != null) state.correctionLock.clear();
+            if (motionImpulse != null) state.correctionLock.clear();
             if (!context.plugin().cancel(this, context.uuid())) state.correctionLock.clear();
             state.silence.packet(now);
             if (state.correctionLock.active()
@@ -89,9 +119,9 @@ public final class AirPredictionCheck extends AbstractCheck implements PacketChe
             var elytraSample = state.elytraSequence.accept(context.flying().hasPositionChanged(),
                     context.flying().hasRotationChanged(), location.getX(), location.getY(), location.getZ(),
                     location.getYaw(), location.getPitch(), elytraEnvironment,
-                    context.plugin().environment().collisions(context.uuid()), context.externalImpulse(), now);
+                    context.plugin().environment().collisions(context.uuid()), motionImpulse, now);
             if (elytraEnvironment == null || !elytraEnvironment.gliding()
-                    || elytraEnvironment.fireworkBoost() || context.externalImpulse() != null) {
+                    || elytraEnvironment.fireworkBoost() || motionImpulse != null) {
                 state.elytraBuffer = 0;
             } else if (context.flying().hasPositionChanged() && elytraSample.evaluated()) {
                 double elytraThreshold = context.plugin().elytraOffsetThreshold();
@@ -122,10 +152,51 @@ public final class AirPredictionCheck extends AbstractCheck implements PacketChe
                     context.flying().hasRotationChanged(),
                     location.getX(), location.getY(), location.getZ(), location.getYaw(),
                     environment, now,
-                    context.inputs(), context.externalImpulse(),
+                    context.inputs(), motionImpulse,
                     predictionCollisions, attackTransition);
+            if (motionImpulse != null) {
+                // The impulse is the initial condition for this trajectory.
+                // Drop the preceding free-fall fit, then evaluate subsequent
+                // client steps against the new server-selected velocity.
+                state.gravityWindow.reset();
+                state.hover.reset();
+            }
             boolean hoverEligible = flightHoverEligible(context, environment, now);
-            if (state.hover.sample(hoverEligible, environment == null ? 0 : environment.y(), now)) {
+            // Sample the ordered packet trajectory. Reusing a main-thread Y
+            // snapshot across several packets manufactures stationary segments.
+            var hoverPosition = state.sequence.lastPosition();
+            double hoverY = context.flying().hasPositionChanged() ? location.getY()
+                    : hoverPosition != null ? hoverPosition.y()
+                    : environment == null ? Double.NaN : environment.y();
+            double gravityX = hoverPosition == null ? location.getX() : hoverPosition.x();
+            double gravityZ = hoverPosition == null ? location.getZ() : hoverPosition.z();
+            boolean freeFall = hoverEligible && !context.timingUncertain()
+                    && !context.serverTiming().delayed()
+                    && motionImpulse == null
+                    // While this grant's tail is still part of the simulated
+                    // velocity state, AirMotionSequence owns the full 3D path.
+                    // The independent free-fall fit resumes after that modeled
+                    // server velocity has decayed below its legal cutoff.
+                    && serverMotion == null
+                    && AirGravityWindow.clearVerticalCorridor(predictionCollisions,
+                            previous == null ? gravityX : previous.x(),
+                            previous == null ? hoverY : previous.y(),
+                            previous == null ? gravityZ : previous.z(),
+                            gravityX, hoverY, gravityZ, now);
+            boolean gravityMismatch = context.flying().hasPositionChanged()
+                    && state.gravityWindow.sample(freeFall, hoverY,
+                            environment == null ? 0 : environment.gravity(),
+                            environment == null ? 0 : environment.verticalDrag(), now,
+                            sample.skippedFrames() + 1);
+            if (gravityMismatch) {
+                flagLimited(context, () -> String.format(Locale.ROOT,
+                        "continuous gravity trajectory mismatch; %s airOffset=%.4f dy=%.4f skipped=%d velocitySeq=%d",
+                        state.gravityWindow.diagnostic(), sample.offset(), sample.verticalDistance(),
+                        sample.skippedFrames(), state.serverMotionSequence));
+                correct(context, state, previous, previousMotion, previousVerticalVelocity, true);
+                return;
+            }
+            if (state.hover.sample(hoverEligible, hoverY, now)) {
                 flagLimited(context, "sustained vertical hover in collision-free air (Flight/Anti-Kick)");
                 if (context.flying().hasPositionChanged()) {
                     if (now - state.lastHoverCorrectionAt >= 250) {
@@ -295,6 +366,13 @@ public final class AirPredictionCheck extends AbstractCheck implements PacketChe
                             context.location().getZ()));
     }
 
+    private static boolean sameVector(ExternalMotionTracker.Impulse impulse,
+                                      org.pexserver.pac.packet.PacketChecks.ServerMotionGrant grant) {
+        return Math.abs(impulse.x() - grant.velocityX()) < 1.0e-6
+                && Math.abs(impulse.y() - grant.velocityY()) < 1.0e-6
+                && Math.abs(impulse.z() - grant.velocityZ()) < 1.0e-6;
+    }
+
     private static boolean flightHoverEligible(
             org.pexserver.pac.movement.MotionEnvironment.Snapshot environment,
             boolean noRecentExternalMotion, long now) {
@@ -314,5 +392,8 @@ public final class AirPredictionCheck extends AbstractCheck implements PacketChe
         }
     }
 
-    @Override public void forget(UUID uuid) { super.forget(uuid); states.remove(uuid); }
+    @Override public void forget(UUID uuid) {
+        super.forget(uuid);
+        states.remove(uuid);
+    }
 }

@@ -18,10 +18,15 @@ public final class AirHoverWindow {
     private static final int MINIMUM_SAMPLES = 4;
     private static final long INELIGIBLE_GRACE_MILLIS = 750;
 
-    private record Sample(long at, double y) { }
+    private record Sample(long at, double y, boolean eligible) { }
 
     private final ArrayDeque<Sample> samples = new ArrayDeque<>();
     private long lastEligibleAt;
+
+    public void reset() {
+        samples.clear();
+        lastEligibleAt = 0;
+    }
 
     public boolean sample(boolean eligible, double y, long now) {
         if (!Double.isFinite(y)) {
@@ -38,10 +43,10 @@ public final class AirHoverWindow {
                     || now - lastEligibleAt > INELIGIBLE_GRACE_MILLIS) {
                 samples.clear();
                 lastEligibleAt = 0;
+                return false;
             }
-            return false;
         }
-        lastEligibleAt = now;
+        if (eligible) lastEligibleAt = now;
 
         Sample previous = samples.peekLast();
         if (previous != null && (now < previous.at() || now - previous.at() > MAX_SAMPLE_GAP_MILLIS))
@@ -49,10 +54,13 @@ public final class AirHoverWindow {
 
         previous = samples.peekLast();
         if (previous != null && now - previous.at() < MIN_SAMPLE_INTERVAL_MILLIS) samples.removeLast();
-        samples.addLast(new Sample(now, y));
+        // Keep the intervening trajectory, not just eligible jump apexes.
+        // Otherwise successive jumps at the same height look like a hover.
+        samples.addLast(new Sample(now, y, eligible));
         while (!samples.isEmpty() && now - samples.peekFirst().at() > WINDOW_MILLIS)
             samples.removeFirst();
 
+        if (!eligible) return false;
         Sample first = samples.peekFirst();
         if (first == null || samples.size() < MINIMUM_SAMPLES
                 || now - first.at() < MINIMUM_SPAN_MILLIS) return false;
@@ -73,7 +81,8 @@ public final class AirHoverWindow {
                 long ticks = Math.max(1, Math.min(20,
                         Math.round((sample.at() - previous.at()) / 50.0)));
                 observedTicks += ticks;
-                if (Math.abs(sample.y() - previous.y()) <= NEAR_STATIONARY_PER_TICK * ticks)
+                if (sample.eligible() && previous.eligible()
+                        && Math.abs(sample.y() - previous.y()) <= NEAR_STATIONARY_PER_TICK * ticks)
                     nearStationaryTicks += ticks;
             }
             previous = sample;

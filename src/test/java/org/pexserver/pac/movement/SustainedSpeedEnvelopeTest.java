@@ -10,6 +10,46 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SustainedSpeedEnvelopeTest {
     private static final long BASE_NANOS = System.nanoTime();
+    @Test void repeatedVanillaSprintJumpsKeepMomentumAcrossLandingSnapshots() {
+        sprintJumps(0, false);
+    }
+
+    @Test void repeatedSprintJumpsWithDelayedGroundSnapshotsAndCollisionGeometry() {
+        sprintJumps(1, true);
+        sprintJumps(2, true);
+    }
+
+    private void sprintJumps(int snapshotDelay, boolean geometry) {
+        var envelope = new SustainedSpeedEnvelope();
+        double x = 0, y = 64, horizontal = 0.28, vertical = 0;
+        boolean grounded = true;
+        boolean[] groundHistory = new boolean[161];
+        groundHistory[0] = true;
+        envelope.accept(x, y, 0, ground(0, x, y), null, BASE_NANOS, false);
+        for (int tick = 1; tick <= 160; tick++) {
+            if (grounded) {
+                horizontal = horizontal * (0.6f * 0.91f) + 0.13f * 0.98f + 0.2;
+                vertical = 0.42f;
+            } else {
+                horizontal = horizontal * 0.91f + 0.026f * 0.98f;
+                vertical = (vertical - 0.08) * 0.98f;
+            }
+            x += horizontal;
+            y = Math.max(64, y + vertical);
+            grounded = y == 64;
+            groundHistory[tick] = grounded;
+            boolean sampledGround = groundHistory[Math.max(0, tick - snapshotDelay)];
+            var collisions = geometry ? new MotionCollisionSnapshot(x - 3, 62, -3, x + 3, 70, 3,
+                    0.6, 1.8, 0.6, 0.6,
+                    List.of(new MotionCollisionSnapshot.Box(x - 3, 63, -3, x + 3, 64, 3)),
+                    true, System.currentTimeMillis()) : null;
+            var sample = envelope.accept(x, y, 0,
+                    sampledGround ? ground(tick, x, y) : air(tick, x, y), collisions,
+                    BASE_NANOS + tick * 50_000_000L, false);
+            assertFalse(sample.flagged(), "vanilla jump tick " + tick
+                    + " speed=" + sample.speed() + " legal=" + sample.legalSpeed());
+        }
+    }
     @Test void catchesPointFourFlightWhileStayingOnFlatGround() {
         var envelope = new SustainedSpeedEnvelope();
         envelope.accept(0, 64, 0, ground(0, 0, 64), null, BASE_NANOS, false);

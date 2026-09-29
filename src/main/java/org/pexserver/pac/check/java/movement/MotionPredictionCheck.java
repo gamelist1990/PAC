@@ -43,7 +43,9 @@ public final class MotionPredictionCheck extends AbstractCheck implements Packet
         // (for example timer or invalid-movement) may already have cancelled it;
         // prediction must still consume the coordinates or its state freezes and
         // this detector can remain permanently silent for the rest of the burst.
-        if (context.plugin().environment().authorizedFlightMovement(context.uuid())) {
+        if (context.plugin().environment().authorizedFlightMovement(context.uuid())
+                && context.externalImpulse() == null
+                && context.plugin().serverMotionGrant(context.uuid()) == null) {
             states.remove(context.uuid());
             return;
         }

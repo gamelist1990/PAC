@@ -33,7 +33,13 @@ import java.util.concurrent.atomic.AtomicLong;
 
 /** Packet transport adapter; detector logic lives in independent modules. */
 public final class PacketChecks implements PacketListener, Listener {
-    public record ServerMotionGrant(long sequence, double horizontalSpeed, long until) { }
+    public record ServerMotionGrant(long sequence, double horizontalSpeed,
+                                    double velocityX, double velocityY, double velocityZ,
+                                    long until) {
+        public ServerMotionGrant(long sequence, double horizontalSpeed, long until) {
+            this(sequence, horizontalSpeed, 0, 0, 0, until);
+        }
+    }
     private final PacPlugin plugin;
     private final ConcurrentHashMap<UUID, org.pexserver.pac.movement.MovementLatencyWindow> latencyWindows = new ConcurrentHashMap<>();
     private final JavaInputCapture inputs = new JavaInputCapture();
@@ -61,9 +67,14 @@ public final class PacketChecks implements PacketListener, Listener {
     static long serverMotionDuration(double horizontalSpeed, double verticalSpeed) {
         if (!Double.isFinite(horizontalSpeed) || horizontalSpeed < 0
                 || !Double.isFinite(verticalSpeed)) return 0;
-        double ticks = horizontalSpeed <= 0.3 ? 0
-                : Math.log(0.3 / horizontalSpeed) / Math.log(0.91);
-        double verticalTicks = Math.max(0, verticalSpeed) / 0.08;
+        // Follow the externally selected velocity until its remaining tail is
+        // smaller than ordinary per-tick movement. A 0.3 cutoff discarded most
+        // plugin velocities immediately, even though they still materially
+        // alter the next several client physics steps (especially on ice).
+        double ticks = horizontalSpeed <= 0.03 ? 0
+                : Math.log(0.03 / horizontalSpeed) / Math.log(0.91);
+        // Downward setVelocity is just as authoritative as an upward launch.
+        double verticalTicks = Math.abs(verticalSpeed) / 0.08;
         return Math.max(300, Math.min(3_000,
                 (long) Math.ceil(Math.max(ticks, verticalTicks) * 50 + 300)));
     }
@@ -104,14 +115,16 @@ public final class PacketChecks implements PacketListener, Listener {
             serverMotionGrants.remove(uuid);
             return;
         }
-        if (horizontal >= 0.35 || Math.abs(y) >= 0.18) {
-            ServerMotionGrant previous = serverMotionGrants.get(uuid);
-            if (outbound && previous != null
-                    && Math.abs(previous.horizontalSpeed() - horizontal) < 0.05
-                    && previous.until() > now) return;
-            serverMotionGrants.put(uuid, new ServerMotionGrant(nextServerMotionGrant.incrementAndGet(),
-                    horizontal, now + serverMotionDuration(horizontal, y)));
-        }
+        // Every velocity packet replaces client motion, including small vectors
+        // and (0,0,0). Size thresholds turn legitimate plugin motion into an
+        // apparent gravity/speed violation. Combat velocity remains handled by
+        // the stricter knockback-response path above.
+        ServerMotionGrant previous = serverMotionGrants.get(uuid);
+        if (outbound && previous != null
+                && Math.abs(previous.horizontalSpeed() - horizontal) < 0.001
+                && previous.until() > now) return;
+        serverMotionGrants.put(uuid, new ServerMotionGrant(nextServerMotionGrant.incrementAndGet(),
+                horizontal, x, y, z, now + serverMotionDuration(horizontal, y)));
     }
 
     @Override public void onPacketReceive(PacketReceiveEvent event) {
@@ -199,7 +212,7 @@ public final class PacketChecks implements PacketListener, Listener {
                 flying.getLocation(), inputWindow,
                 externalUpdates, plugin.environment().teleportGeneration(uuid),
                 latencyWindows.computeIfAbsent(uuid, ignored -> new org.pexserver.pac.movement.MovementLatencyWindow())
-                        .uncertain(now, plugin.environment().pingMillis(uuid), externalUpdates)
+                        .uncertain(now)
                         || serverTiming.recovering()
                         || plugin.environment().poseTransitionUncertain(uuid, now), serverTiming);
         plugin.checks().dispatch(context);

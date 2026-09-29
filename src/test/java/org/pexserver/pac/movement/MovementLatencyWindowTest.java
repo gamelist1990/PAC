@@ -21,67 +21,59 @@ class MovementLatencyWindowTest {
     @Test void stableHighPingDoesNotExemptOrdinaryMovement() {
         var window = new MovementLatencyWindow();
         for (long now = 1_000; now < 5_000; now += 50)
-            assertFalse(window.uncertain(now, 800, null));
+            assertFalse(window.uncertain(now));
     }
 
-    @Test void responseWaitsForFullRoundTripAndSchedulingMargin() {
+    @Test void pingDoesNotSuspendOrderedMovementPrediction() {
         for (int ping : new int[] {0, 50, 200, 500, 1_000}) {
             var window = new MovementLatencyWindow();
-            var impulse = new ExternalMotionTracker.Impulse(1, .689, .4, .095, 1_000, false);
-            assertTrue(window.uncertain(1_000, ping, impulse));
+            assertFalse(window.uncertain(1_000));
             for (long now = 1_050; now < 1_000 + ping + 100; now += 50)
-                assertTrue(window.uncertain(now, ping, null), "in-flight at ping=" + ping);
-            assertFalse(window.uncertain(1_000 + ping + 100, ping, impulse));
+                assertFalse(window.uncertain(now), "ordered movement at ping=" + ping);
+            assertFalse(window.uncertain(1_000 + ping + 100));
         }
     }
 
     @Test void delayedBatchHasFixedRecoveryDeadline() {
         var window = new MovementLatencyWindow();
-        assertFalse(window.uncertain(1_000, 300, null));
-        assertTrue(window.uncertain(1_300, 300, null));
+        assertFalse(window.uncertain(1_000));
+        assertTrue(window.uncertain(1_300));
         for (long now = 1_301; now < 1_450; now++)
-            assertTrue(window.uncertain(now, 300, null));
-        assertFalse(window.uncertain(1_450, 300, null));
+            assertTrue(window.uncertain(now));
+        assertFalse(window.uncertain(1_450));
         // Artificially spaced packets cannot perpetually refresh the exemption.
-        assertFalse(window.uncertain(1_550, 300, null));
-        assertFalse(window.uncertain(1_650, 300, null));
+        assertFalse(window.uncertain(1_550));
+        assertFalse(window.uncertain(1_650));
     }
 
-    @Test void extremePingAndRepeatedImpulseHaveBoundedDeadline() {
+    @Test void extremePingDoesNotCreateMovementBlindWindow() {
         var window = new MovementLatencyWindow();
-        var impulse = new ExternalMotionTracker.Impulse(1, .689, .4, .095, 1_000, false);
         for (long now = 1_000; now < 2_500; now += 50)
-            assertTrue(window.uncertain(now, Integer.MAX_VALUE, impulse));
-        assertFalse(window.uncertain(2_500, Integer.MAX_VALUE, impulse));
+            assertFalse(window.uncertain(now));
+        assertFalse(window.uncertain(2_500));
     }
 
-    @Test void simulateDelayedKnockbackThenDetectPersistentSpeed() {
-        for (int ping : new int[] {50, 200, 500, 1_000}) {
-            var window = new MovementLatencyWindow();
-            var envelope = new SustainedSpeedEnvelope();
-            var impulse = new ExternalMotionTracker.Impulse(1, .689, .4, .095, 1_000, false);
-            double speed = Math.hypot(impulse.x(), impulse.z());
-            double x = 0;
-            boolean caught = false;
-            for (int tick = 0; tick < 120; tick++) {
-                long now = 1_000 + tick * 50L;
-                // Ordered TCP movement generated before the velocity arrives,
-                // followed by the delayed launch and its naturally decaying tail.
-                double actual = now < 1_000 + ping ? .225
-                        : speed * Math.pow(.91, (now - 1_000 - ping) / 50.0);
-                if (tick >= 70) actual = .8;
-                x += actual;
-                if (window.uncertain(now, ping, tick == 0 ? impulse : null)) {
-                    envelope.serverVelocity(speed, x, 64, 0, now * 1_000_000L);
-                    continue;
-                }
-                var environment = new MotionEnvironment.Snapshot(false, true, false, false,
-                        0, .1, x, 64, 0, tick, System.currentTimeMillis());
-                var sample = envelope.accept(x, 64, 0, environment, null, now * 1_000_000L, false);
-                if (tick < 70) assertFalse(sample.flagged(), "legal delayed tail, ping=" + ping);
-                else caught |= sample.flagged();
-            }
-            assertTrue(caught, "speed must still be caught after recovery, ping=" + ping);
+    @Test void modeledServerVelocityDoesNotHideLaterPersistentSpeed() {
+        var window = new MovementLatencyWindow();
+        var envelope = new SustainedSpeedEnvelope();
+        var impulse = new ExternalMotionTracker.Impulse(1, .689, .4, .095, 1_000, false);
+        double speed = Math.hypot(impulse.x(), impulse.z());
+        double x = 0;
+        long start = 1_000_000_000L;
+        envelope.serverVelocity(speed, x, 64, 0, start);
+        boolean caught = false;
+        for (int tick = 0; tick < 120; tick++) {
+            long nowMillis = 1_000 + tick * 50L;
+            long nowNanos = start + tick * 50_000_000L;
+            double actual = tick < 70 ? speed * Math.pow(.91, tick) : .8;
+            x += actual;
+            assertFalse(window.uncertain(nowMillis));
+            var environment = new MotionEnvironment.Snapshot(false, true, false, false,
+                    0, .1, x, 64, 0, tick, System.currentTimeMillis());
+            var sample = envelope.accept(x, 64, 0, environment, null, nowNanos, false);
+            if (tick < 70) assertFalse(sample.flagged(), "legal server velocity tail");
+            else caught |= sample.flagged();
         }
+        assertTrue(caught, "persistent speed must be caught while prediction remains active");
     }
 }

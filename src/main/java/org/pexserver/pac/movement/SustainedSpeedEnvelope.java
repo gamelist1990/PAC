@@ -28,6 +28,7 @@ public final class SustainedSpeedEnvelope {
     private double sprintJumpAllowance;
     private double externalMomentumBound;
     private double previousHorizontalSpeed;
+    private boolean previousGround;
     private GroundMotionSequence.Position suspiciousAnchor;
 
     /** Seed the ceiling from a velocity chosen by the server, before the client responds. */
@@ -108,6 +109,7 @@ public final class SustainedSpeedEnvelope {
             sprintJumpAllowance = 0;
             externalMomentumBound = 0;
             previousHorizontalSpeed = 0;
+            previousGround = environment.ordinaryGround();
             baseline(nextX, nextY, nextZ, nowNanos);
             return Sample.skipped();
         }
@@ -124,7 +126,7 @@ public final class SustainedSpeedEnvelope {
         double speedCap = maximumSustainableSpeed(environment);
         externalMomentumBound = speedCap + Math.max(0, externalMomentumBound - speedCap)
                 * Math.pow(drag, frames);
-        double carryLegalSpeed = environment.ordinaryGround()
+        double carryLegalSpeed = environment.ordinaryGround() && previousGround && Math.abs(dy) <= 0.03
             ? MotionPredictor.maximumGroundStepClient(
                 new MotionPredictor.Motion(0, 0, previousHorizontalSpeed),
                 environment.movementSpeed(), environment.groundFriction(),
@@ -138,7 +140,22 @@ public final class SustainedSpeedEnvelope {
         VerticalTransition transition = legalVerticalTransition(collisions, x, y, z,
                 dx, dy, dz, environment.jumpStrength(), environment.sprinting(),
                 environment.ordinaryGround(), nowMillis);
+        // A main-thread snapshot can already be airborne on the takeoff packet.
+        // Normal jump height is still recognizable from the preceding trusted
+        // ground sample when collision geometry is temporarily unavailable.
+        if (transition == VerticalTransition.NONE && previousGround && frames == 1
+                && dy > 0.03 && Math.abs(dy - environment.jumpStrength()) <= 0.015)
+            transition = VerticalTransition.JUMP;
         if (transition == VerticalTransition.JUMP && environment.sprinting()) {
+            // Takeoff uses ground input acceleration even if the environment
+            // snapshot has advanced to air. Landing keeps the previous air drag.
+            carryLegalSpeed = Math.max(carryLegalSpeed,
+                    MotionPredictor.maximumGroundStepClient(
+                            new MotionPredictor.Motion(0, 0, previousHorizontalSpeed),
+                            environment.movementSpeed(), environment.groundFriction(),
+                            environment.horizontalDrag(),
+                            environment.sneaking() ? environment.sneakingSpeed() : 1.0f,
+                            environment.itemUseMultiplier()));
             // Each grounded sprint jump adds a horizontal impulse. On ice the
             // previous impulse is retained, and a low ceiling can clip Y to
             // nearly zero while repeated jumps keep accelerating the player.
@@ -168,6 +185,7 @@ public final class SustainedSpeedEnvelope {
         // A tolerance is for measuring this frame, not acceleration the client
         // may bank as legitimate momentum for the next frame.
         previousHorizontalSpeed = Math.min(speed, legalSpeed);
+        previousGround = environment.ordinaryGround();
         GroundMotionSequence.Position rollback = suspiciousAnchor == null ? previous : suspiciousAnchor;
         baseline(nextX, nextY, nextZ, nowNanos);
         return new Sample(true, flagged, speed, legalSpeed, flagged ? rollback : null);
@@ -216,6 +234,7 @@ public final class SustainedSpeedEnvelope {
         sprintJumpAllowance = 0;
         externalMomentumBound = 0;
         previousHorizontalSpeed = 0;
+        previousGround = false;
     }
 
     private enum VerticalTransition { NONE, STEP, JUMP }
