@@ -1,5 +1,6 @@
 package org.pexserver.pac;
 
+import org.pexserver.pac.movement.SurfaceBouncePredictor;
 import org.junit.jupiter.api.Test;
 import org.pexserver.pac.movement.GroundMotionSequence;
 import org.pexserver.pac.movement.MultiStepMotionPredictor;
