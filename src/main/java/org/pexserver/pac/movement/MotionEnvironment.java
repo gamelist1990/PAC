@@ -292,12 +292,23 @@ public final class MotionEnvironment implements Listener {
                     && Math.abs(this.z - z) <= 0.25;
         }
     }
+    public record ClimbSnapshot(boolean climbing, double x, double y, double z, long capturedAt) {
+        public boolean fresh(long now) {
+            return now >= capturedAt && now - capturedAt <= 200;
+        }
+        public boolean near(double x, double y, double z, long now) {
+            return fresh(now)
+                    && Math.abs(this.x - x) <= 0.40 && Math.abs(this.y - y) <= 0.50
+                    && Math.abs(this.z - z) <= 0.40;
+        }
+    }
     private final ServerTickTiming serverTiming = new ServerTickTiming();
     public ServerTickTiming serverTiming() { return serverTiming; }
     private final Map<UUID, Integer> pingMillis = new ConcurrentHashMap<>();
     public int pingMillis(UUID uuid) { return pingMillis.getOrDefault(uuid, 0); }
     private final Map<UUID, ElytraSnapshot> elytraSnapshots = new ConcurrentHashMap<>();
     private final Map<UUID, PowderSnowSnapshot> powderSnowSnapshots = new ConcurrentHashMap<>();
+    private final Map<UUID, ClimbSnapshot> climbSnapshots = new ConcurrentHashMap<>();
     private final Map<UUID, Long> elytraBoostUntil = new ConcurrentHashMap<>();
     private final Map<UUID, SafeGround> safeGround = new ConcurrentHashMap<>();
     private final Map<UUID, Long> graceUntil = new ConcurrentHashMap<>();
@@ -344,6 +355,9 @@ public final class MotionEnvironment implements Listener {
         return suppressed(uuid, System.currentTimeMillis()) ? null : elytraSnapshots.get(uuid);
     }
     public PowderSnowSnapshot powderSnow(UUID uuid) { return powderSnowSnapshots.get(uuid); }
+    public ClimbSnapshot climb(UUID uuid) {
+        return suppressed(uuid, System.currentTimeMillis()) ? null : climbSnapshots.get(uuid);
+    }
     public SafeGround safeGround(UUID uuid) { return safeGround.get(uuid); }
     /** Drop a partially written tick without losing teleport synchronization or the last safe ground. */
     public void discardFailedSample(UUID uuid) {
@@ -351,6 +365,7 @@ public final class MotionEnvironment implements Listener {
         collisionSnapshots.remove(uuid);
         elytraSnapshots.remove(uuid);
         powderSnowSnapshots.remove(uuid);
+        climbSnapshots.remove(uuid);
         collisionSampleContinuity.remove(uuid);
         entityPushWindows.remove(uuid);
         pendingAttackPushes.remove(uuid);
@@ -435,6 +450,10 @@ public final class MotionEnvironment implements Listener {
         elytraSnapshots.put(uuid, sampleElytra(player));
         observeGlide(player, player.isGliding());
         powderSnowSnapshots.put(uuid, samplePowderSnow(player));
+        Location sampledLocation = player.getLocation();
+        climbSnapshots.put(uuid, new ClimbSnapshot(player.isClimbing(),
+                sampledLocation.getX(), sampledLocation.getY(), sampledLocation.getZ(),
+                System.currentTimeMillis()));
         if (snapshot.ordinaryGround() || snapshot.verticalAir()
                 || player.isGliding() || player.isInWater() && !player.isInLava())
             collisionSnapshots.put(uuid, sampleCollisions(player,
