@@ -39,6 +39,7 @@ import org.pexserver.pac.check.shared.EntityCollisionPolicy;
 import org.pexserver.pac.movement.ground.GroundStateService;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.component.DataComponents;
+import net.minecraft.tags.BlockTags;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.item.component.UseEffects;
 
@@ -68,7 +69,33 @@ public final class MotionEnvironment implements Listener {
                            float sneakingSpeed, float itemUseMultiplier,
                            float stuckHorizontalMultiplier, float stuckVerticalMultiplier,
                            boolean gravityAirborne, float blockSpeedFactor,
-                           boolean specialVerticalSurface) {
+                           boolean specialVerticalSurface,
+                           float surfaceJumpStrength, float bounceRestitution) {
+        public Snapshot(boolean ordinaryGround, boolean ordinaryAir,
+                        boolean sprinting, boolean sneaking, boolean usingItem,
+                        float yaw, double movementSpeed,
+                        double x, double y, double z,
+                        int tick, long capturedAt,
+                        boolean wallAdjacent, boolean waterSurface,
+                        float groundFriction,
+                        double gravity, float horizontalDrag, float verticalDrag,
+                        float jumpStrength, boolean slowFalling,
+                        int levitationAmplifier, boolean verticalAir,
+                        float sneakingSpeed, float itemUseMultiplier,
+                        float stuckHorizontalMultiplier, float stuckVerticalMultiplier,
+                        boolean gravityAirborne, float blockSpeedFactor,
+                        boolean specialVerticalSurface) {
+            this(ordinaryGround, ordinaryAir, sprinting, sneaking, usingItem,
+                    yaw, movementSpeed, x, y, z, tick, capturedAt,
+                    wallAdjacent, waterSurface, groundFriction,
+                    gravity, horizontalDrag, verticalDrag, jumpStrength,
+                    slowFalling, levitationAmplifier, verticalAir,
+                    sneakingSpeed, itemUseMultiplier,
+                    stuckHorizontalMultiplier, stuckVerticalMultiplier,
+                    gravityAirborne, blockSpeedFactor, specialVerticalSurface,
+                    jumpStrength, 0.0f);
+        }
+
         public Snapshot(boolean ordinaryGround, boolean ordinaryAir,
                         boolean sprinting, boolean sneaking, boolean usingItem,
                         float yaw, double movementSpeed,
@@ -89,7 +116,7 @@ public final class MotionEnvironment implements Listener {
                     slowFalling, levitationAmplifier, verticalAir,
                     sneakingSpeed, itemUseMultiplier,
                     stuckHorizontalMultiplier, stuckVerticalMultiplier,
-                    gravityAirborne, 1.0f, false);
+                    gravityAirborne, 1.0f, false, jumpStrength, 0.0f);
         }
         public Snapshot(boolean ordinaryGround, boolean ordinaryAir,
                         boolean sprinting, boolean sneaking, boolean usingItem,
@@ -117,7 +144,8 @@ public final class MotionEnvironment implements Listener {
                     gravity, horizontalDrag, verticalDrag, jumpStrength, slowFalling,
                     levitationAmplifier, verticalAir, sneakingSpeed, itemUseMultiplier,
                     stuckHorizontalMultiplier, stuckVerticalMultiplier, gravityAirborne,
-                    blockSpeedFactor, specialVerticalSurface);
+                    blockSpeedFactor, specialVerticalSurface,
+                    surfaceJumpStrength, bounceRestitution);
         }
                 public Snapshot withSprinting(boolean sprinting, double speed) {
                     return new Snapshot(ordinaryGround, ordinaryAir, sprinting, sneaking, usingItem,
@@ -125,7 +153,8 @@ public final class MotionEnvironment implements Listener {
                         gravity, horizontalDrag, verticalDrag, jumpStrength, slowFalling,
                         levitationAmplifier, verticalAir, sneakingSpeed, itemUseMultiplier,
                         stuckHorizontalMultiplier, stuckVerticalMultiplier, gravityAirborne,
-                        blockSpeedFactor, specialVerticalSurface);
+                        blockSpeedFactor, specialVerticalSurface,
+                    surfaceJumpStrength, bounceRestitution);
                 }
         public Snapshot withBlockSpeedFactor(float factor) {
             return new Snapshot(ordinaryGround, ordinaryAir, sprinting, sneaking, usingItem,
@@ -133,7 +162,8 @@ public final class MotionEnvironment implements Listener {
                     gravity, horizontalDrag, verticalDrag, jumpStrength, slowFalling,
                     levitationAmplifier, verticalAir, sneakingSpeed, itemUseMultiplier,
                     stuckHorizontalMultiplier, stuckVerticalMultiplier, gravityAirborne,
-                    factor, specialVerticalSurface);
+                    factor, specialVerticalSurface,
+                    surfaceJumpStrength, bounceRestitution);
         }
         public Snapshot withSpecialVerticalSurface(boolean special) {
             return new Snapshot(ordinaryGround, ordinaryAir, sprinting, sneaking, usingItem,
@@ -141,7 +171,16 @@ public final class MotionEnvironment implements Listener {
                     gravity, horizontalDrag, verticalDrag, jumpStrength, slowFalling,
                     levitationAmplifier, verticalAir, sneakingSpeed, itemUseMultiplier,
                     stuckHorizontalMultiplier, stuckVerticalMultiplier, gravityAirborne,
-                    blockSpeedFactor, special);
+                    blockSpeedFactor, special,
+                    surfaceJumpStrength, bounceRestitution);
+        }
+        public Snapshot withSurfaceVerticalPhysics(float jumpStrength, float restitution) {
+            return new Snapshot(ordinaryGround, ordinaryAir, sprinting, sneaking, usingItem,
+                    yaw, movementSpeed, x, y, z, tick, capturedAt, wallAdjacent, waterSurface, groundFriction,
+                    gravity, horizontalDrag, verticalDrag, this.jumpStrength, slowFalling,
+                    levitationAmplifier, verticalAir, sneakingSpeed, itemUseMultiplier,
+                    stuckHorizontalMultiplier, stuckVerticalMultiplier, gravityAirborne,
+                    blockSpeedFactor, true, jumpStrength, restitution);
         }
         public Snapshot(boolean ordinaryGround, boolean ordinaryAir,
                         boolean sprinting, boolean sneaking, boolean usingItem,
@@ -821,7 +860,9 @@ public final class MotionEnvironment implements Listener {
                 || Math.abs(previous.stuckHorizontalMultiplier() - current.stuckHorizontalMultiplier()) > 1.0e-6
                 || Math.abs(previous.stuckVerticalMultiplier() - current.stuckVerticalMultiplier()) > 1.0e-6
                 || Math.abs(previous.blockSpeedFactor() - current.blockSpeedFactor()) > 1.0e-6
-                || previous.specialVerticalSurface() != current.specialVerticalSurface();
+                || previous.specialVerticalSurface() != current.specialVerticalSurface()
+                || Float.compare(previous.surfaceJumpStrength(), current.surfaceJumpStrength()) != 0
+                || Float.compare(previous.bounceRestitution(), current.bounceRestitution()) != 0;
     }
 
     private Snapshot sample(Player player) {
@@ -878,7 +919,11 @@ public final class MotionEnvironment implements Listener {
                 && movementSpeed.getValue() >= 0 && movementSpeed.getValue() <= 1024;
         Location location = player.getLocation();
         float blockSpeedFactor = effectiveBlockSpeedFactor(player);
-        boolean specialVerticalSurface = specialVerticalSurface(player);
+        VerticalSurfacePhysics verticalSurface = verticalSurfacePhysics(player, jumpValue,
+                jumpBoost == null ? -1 : jumpBoost.getAmplifier());
+        boolean specialVerticalSurface = !verticalSurface.reliable()
+                || Math.abs(verticalSurface.jumpStrength() - effectiveJumpStrength) > 1.0e-6f
+                || verticalSurface.bounceRestitution() > 0.0f;
         double frictionValue = frictionModifier == null ? Double.NaN : frictionModifier.getValue();
         float groundFriction = supported && usableGroundSpeed && knownGround && state.onGround()
                 ? groundFriction(player, frictionValue, state.supportY()) : Float.NaN;
@@ -926,19 +971,43 @@ public final class MotionEnvironment implements Listener {
                 levitationAmplifier, verticalAir,
                 Double.isFinite(sneakValue) ? (float) sneakValue : 0.3f, useMultiplier,
                 stuckHorizontalMultiplier, stuckVerticalMultiplier, gravityAirborne,
-                blockSpeedFactor, specialVerticalSurface);
+                blockSpeedFactor, specialVerticalSurface,
+                verticalSurface.jumpStrength(), verticalSurface.bounceRestitution());
     }
 
-    private boolean specialVerticalSurface(Player player) {
+    private record VerticalSurfacePhysics(float jumpStrength, float bounceRestitution,
+                                          boolean reliable) { }
+
+    private VerticalSurfacePhysics verticalSurfacePhysics(Player player, double baseJumpStrength,
+                                                          int jumpBoostAmplifier) {
+        if (!Double.isFinite(baseJumpStrength) || baseJumpStrength < 0 || baseJumpStrength > 32)
+            return new VerticalSurfacePhysics(Float.NaN, Float.NaN, false);
         var handle = ((CraftPlayer) player).getHandle();
+        BlockPos feet = handle.blockPosition();
         BlockPos support = handle.getBlockPosBelowThatAffectsMyMovement();
+        BlockPos effect = handle.getOnPosLegacy();
         World world = player.getWorld();
-        if (!world.isChunkLoaded(support.getX() >> 4, support.getZ() >> 4)) return true;
-        var supportBlock = ((CraftBlock) world.getBlockAt(support.getX(), support.getY(), support.getZ()))
-                .getBlockState().getBlock();
-        var feetBlock = ((CraftBlock) player.getLocation().getBlock()).getBlockState().getBlock();
-        return supportBlock.getBounceRestitution() != 0.0f || supportBlock.getJumpFactor() != 1.0f
-                || feetBlock.getBounceRestitution() != 0.0f || feetBlock.getJumpFactor() != 1.0f;
+        if (!world.isChunkLoaded(feet.getX() >> 4, feet.getZ() >> 4)
+                || !world.isChunkLoaded(support.getX() >> 4, support.getZ() >> 4)
+                || !world.isChunkLoaded(effect.getX() >> 4, effect.getZ() >> 4))
+            return new VerticalSurfacePhysics(Float.NaN, Float.NaN, false);
+
+        var feetState = ((CraftBlock) world.getBlockAt(feet.getX(), feet.getY(), feet.getZ())).getBlockState();
+        var supportState = ((CraftBlock) world.getBlockAt(support.getX(), support.getY(), support.getZ())).getBlockState();
+        var effectState = ((CraftBlock) world.getBlockAt(effect.getX(), effect.getY(), effect.getZ())).getBlockState();
+
+        float hereJump = feetState.getBlock().getJumpFactor();
+        float belowJump = supportState.getBlock().getJumpFactor();
+        float jumpFactor = hereJump == 1.0f ? belowJump : hereJump;
+        float restitution = effectState.is(BlockTags.SUPPRESSES_BOUNCE)
+                ? 0.0f : effectState.getBlock().getBounceRestitution();
+        if (!Float.isFinite(jumpFactor) || jumpFactor < 0 || jumpFactor > 4
+                || !Float.isFinite(restitution) || restitution < 0 || restitution > 4)
+            return new VerticalSurfacePhysics(Float.NaN, Float.NaN, false);
+
+        float boost = jumpBoostAmplifier < 0 ? 0.0f : 0.1f * (jumpBoostAmplifier + 1);
+        float surfaceJump = (float) baseJumpStrength * jumpFactor + boost;
+        return new VerticalSurfacePhysics(surfaceJump, restitution, Float.isFinite(surfaceJump));
     }
 
     private float effectiveBlockSpeedFactor(Player player) {
