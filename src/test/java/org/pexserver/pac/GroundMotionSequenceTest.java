@@ -208,6 +208,83 @@ class GroundMotionSequenceTest {
                 "LiquidBounce HighJump's default 0.8Y launch must exceed the server jump-strength envelope");
     }
 
+    @Test void honeyJumpUsesServerJumpFactor() {
+        var sequence = new GroundMotionSequence();
+        var honeyGround = ground(0, 1, 1000)
+                .withSurfaceVerticalPhysics(0.21f, 0.0f);
+        sequence.accept(true, true, 0, 64, 0, 0, honeyGround, 1000);
+
+        var legal = sequence.accept(true, false, 0, 64.21, 0, 0,
+                air(64.21, 2, 1050).withSurfaceVerticalPhysics(0.21f, 0.0f), 1050);
+
+        assertFalse(legal.impossibleTakeoff(),
+                "Honey's server jump factor must reduce the legal takeoff instead of disabling prediction");
+    }
+
+    @Test void liquidBounceBlockBounceOnHoneyExceedsServerJumpFactor() {
+        var sequence = new GroundMotionSequence();
+        var honeyGround = ground(0, 1, 1000)
+                .withSurfaceVerticalPhysics(0.21f, 0.0f);
+        sequence.accept(true, true, 0, 64, 0, 0, honeyGround, 1000);
+
+        // Default BlockBounce adds +0.42 to the already reduced Honey jump.
+        var boosted = sequence.accept(true, false, 0, 64.63, 0, 0,
+                air(64.63, 2, 1050).withSurfaceVerticalPhysics(0.21f, 0.0f), 1050);
+
+        assertTrue(boosted.impossibleTakeoff());
+    }
+
+    @Test void slimeBounceSuppressionIsDetectedOnFollowingPhysicsFrame() {
+        var sequence = new GroundMotionSequence();
+        sequence.rebase(0, 64.2, 0, 0, -0.30, 0,
+                air(64.2, 1, 1000).withSurfaceVerticalPhysics(0.42f, 1.0f), 1000);
+
+        var landing = sequence.accept(true, false, 0, 64.0, 0, 0,
+                ground(0, 2, 1050).withSurfaceVerticalPhysics(0.42f, 1.0f), 1050);
+        assertEquals(GroundMotionSequence.SurfaceVerticalAnomaly.NONE,
+                landing.surfaceVerticalAnomaly());
+
+        var suppressed = sequence.accept(true, false, 0, 64.0, 0, 0,
+                ground(0, 3, 1100).withSurfaceVerticalPhysics(0.42f, 1.0f), 1100);
+
+        assertEquals(GroundMotionSequence.SurfaceVerticalAnomaly.BOUNCE_SUPPRESSED,
+                suppressed.surfaceVerticalAnomaly());
+    }
+
+    @Test void vanillaSlimeBounceIsAccepted() {
+        var sequence = new GroundMotionSequence();
+        sequence.rebase(0, 64.2, 0, 0, -0.30, 0,
+                air(64.2, 1, 1000).withSurfaceVerticalPhysics(0.42f, 1.0f), 1000);
+        sequence.accept(true, false, 0, 64.0, 0, 0,
+                ground(0, 2, 1050).withSurfaceVerticalPhysics(0.42f, 1.0f), 1050);
+
+        double expected = SurfaceBouncePredictor.nextDisplacementAfterBounce(
+                -0.30, -0.20, 0.08, 0.98f, false, 1.0f);
+        var bounced = sequence.accept(true, false, 0, 64.0 + expected, 0, 0,
+                air(64.0 + expected, 3, 1100)
+                        .withSurfaceVerticalPhysics(0.42f, 1.0f), 1100);
+
+        assertEquals(GroundMotionSequence.SurfaceVerticalAnomaly.NONE,
+                bounced.surfaceVerticalAnomaly());
+    }
+
+    @Test void excessiveClientSideBounceIsDetected() {
+        var sequence = new GroundMotionSequence();
+        sequence.rebase(0, 64.2, 0, 0, -0.30, 0,
+                air(64.2, 1, 1000).withSurfaceVerticalPhysics(0.42f, 1.0f), 1000);
+        sequence.accept(true, false, 0, 64.0, 0, 0,
+                ground(0, 2, 1050).withSurfaceVerticalPhysics(0.42f, 1.0f), 1050);
+
+        double expected = SurfaceBouncePredictor.nextDisplacementAfterBounce(
+                -0.30, -0.20, 0.08, 0.98f, false, 1.0f);
+        var boosted = sequence.accept(true, false, 0, 64.0 + expected + 0.30, 0, 0,
+                air(64.0 + expected + 0.30, 3, 1100)
+                        .withSurfaceVerticalPhysics(0.42f, 1.0f), 1100);
+
+        assertEquals(GroundMotionSequence.SurfaceVerticalAnomaly.BOUNCE_EXCESS,
+                boosted.surfaceVerticalAnomaly());
+    }
+
     @Test void shortUpwardStepWithoutCollisionIsAnImpossibleTakeoff() {
         var sequence = new GroundMotionSequence();
         sequence.accept(true, true, 0, 64, 0, 0, ground(0, 1, 1000), 1000);
