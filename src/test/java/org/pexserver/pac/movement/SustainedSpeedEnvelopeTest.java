@@ -424,4 +424,42 @@ class SustainedSpeedEnvelopeTest {
                 false, false, 0.6f, 0.08, 0.91f, 0.98f, 0.42f,
                 false, -1, true, 0.3f, 1.0f, 1.0f, 1.0f);
     }
+    @Test void soulSandNoSlowCannotBankOrdinaryGroundMomentum() {
+        var envelope = new SustainedSpeedEnvelope();
+        double x = 0;
+        var terrain = ground(0, 0, 64).withVelocityMultiplier(0.4f);
+        envelope.accept(0, 64, 0, terrain, null, BASE_NANOS, false);
+
+        boolean flagged = false;
+        for (int tick = 1; tick <= 14; tick++) {
+            // Approximate ordinary sprint-ground displacement while deliberately
+            // skipping the terrain's 0.4 carry multiplier.
+            x += 0.40;
+            var sample = envelope.accept(x, 64, 0,
+                    ground(tick, x, 64).withVelocityMultiplier(0.4f), null,
+                    BASE_NANOS + tick * 50_000_000L, false);
+            flagged |= sample.flagged();
+        }
+        assertTrue(flagged,
+                "sustained speed that ignores a 0.4 terrain multiplier must be rejected");
+    }
+
+    @Test void terrainSlowdownSequenceDoesNotFalseFlag() {
+        var envelope = new SustainedSpeedEnvelope();
+        double x = 0;
+        double speed = 0.30;
+        envelope.accept(0, 64, 0,
+                ground(0, 0, 64).withVelocityMultiplier(0.4f), null,
+                BASE_NANOS, false);
+        for (int tick = 1; tick <= 20; tick++) {
+            speed = speed * (0.6f * 0.91f * 0.4f) + 0.13f * 0.98f;
+            x += speed;
+            var sample = envelope.accept(x, 64, 0,
+                    ground(tick, x, 64).withVelocityMultiplier(0.4f), null,
+                    BASE_NANOS + tick * 50_000_000L, false);
+            assertFalse(sample.flagged(), "legal terrain slowdown tick " + tick);
+        }
+    }
+
+
 }

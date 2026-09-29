@@ -68,8 +68,17 @@ public final class MotionPredictor {
     public static Result predictGround(Motion previous, Motion actual, float yaw,
                                        double movementSpeed, boolean sneaking, boolean usingItem,
                                        float blockFriction, float horizontalDrag) {
+        return predictGround(previous, actual, yaw, movementSpeed, sneaking, usingItem,
+                blockFriction, horizontalDrag, 1.0f);
+    }
+
+    public static Result predictGround(Motion previous, Motion actual, float yaw,
+                                       double movementSpeed, boolean sneaking, boolean usingItem,
+                                       float blockFriction, float horizontalDrag,
+                                       float velocityMultiplier) {
         return predictCandidates(previous, actual, yaw, groundAcceleration(movementSpeed, blockFriction),
-                (double) (blockFriction * horizontalDrag), sneaking, usingItem);
+                groundRetention(blockFriction, horizontalDrag, velocityMultiplier),
+                sneaking, usingItem);
     }
 
     public static Result predictGroundInput(Motion previous, Motion actual, float yaw,
@@ -82,9 +91,17 @@ public final class MotionPredictor {
     public static Result predictGroundInput(Motion previous, Motion actual, float yaw,
                                             double movementSpeed, boolean sneaking, boolean usingItem,
                                             float blockFriction, float horizontalDrag, Input input) {
+        return predictGroundInput(previous, actual, yaw, movementSpeed, sneaking, usingItem,
+                blockFriction, horizontalDrag, 1.0f, input);
+    }
+
+    public static Result predictGroundInput(Motion previous, Motion actual, float yaw,
+                                            double movementSpeed, boolean sneaking, boolean usingItem,
+                                            float blockFriction, float horizontalDrag,
+                                            float velocityMultiplier, Input input) {
         return predictOne(previous, actual, yaw, groundAcceleration(movementSpeed, blockFriction),
-                (double) (blockFriction * horizontalDrag), sneaking, usingItem,
-                input.forwardAxis(), input.strafeAxis());
+                groundRetention(blockFriction, horizontalDrag, velocityMultiplier),
+                sneaking, usingItem, input.forwardAxis(), input.strafeAxis());
     }
 
     private static double groundAcceleration(double movementSpeed, float friction) {
@@ -95,15 +112,31 @@ public final class MotionPredictor {
 
     public static double maximumGroundStep(Motion previous, double movementSpeed,
                                            float blockFriction, float horizontalDrag) {
-        return Math.hypot(previous.dx(), previous.dz()) * blockFriction * horizontalDrag
+        return maximumGroundStep(previous, movementSpeed, blockFriction, horizontalDrag, 1.0f);
+    }
+
+    public static double maximumGroundStep(Motion previous, double movementSpeed,
+                                           float blockFriction, float horizontalDrag,
+                                           float velocityMultiplier) {
+        return Math.hypot(previous.dx(), previous.dz())
+                * groundRetention(blockFriction, horizontalDrag, velocityMultiplier)
                 + groundAcceleration(movementSpeed, blockFriction);
     }
 
     public static double maximumGroundStepClient(Motion previous, double movementSpeed,
                                                  float blockFriction, float horizontalDrag,
                                                  float sneakingSpeed, float itemUseMultiplier) {
+        return maximumGroundStepClient(previous, movementSpeed, blockFriction, horizontalDrag,
+                sneakingSpeed, itemUseMultiplier, 1.0f);
+    }
+
+    public static double maximumGroundStepClient(Motion previous, double movementSpeed,
+                                                 float blockFriction, float horizontalDrag,
+                                                 float sneakingSpeed, float itemUseMultiplier,
+                                                 float velocityMultiplier) {
         double maximumInput = maximumClientInputLength(sneakingSpeed, itemUseMultiplier);
-        return Math.hypot(previous.dx(), previous.dz()) * blockFriction * horizontalDrag
+        return Math.hypot(previous.dx(), previous.dz())
+                * groundRetention(blockFriction, horizontalDrag, velocityMultiplier)
                 + groundAcceleration(movementSpeed, blockFriction) * maximumInput;
     }
 
@@ -112,9 +145,17 @@ public final class MotionPredictor {
                                                    float blockFriction, float horizontalDrag,
                                                    float sneakingSpeed, float itemUseMultiplier,
                                                    int frames) {
+        return maximumGroundTravelClient(previous, movementSpeed, blockFriction, horizontalDrag,
+                sneakingSpeed, itemUseMultiplier, frames, 1.0f);
+    }
+
+    public static double maximumGroundTravelClient(Motion previous, double movementSpeed,
+                                                   float blockFriction, float horizontalDrag,
+                                                   float sneakingSpeed, float itemUseMultiplier,
+                                                   int frames, float velocityMultiplier) {
         int count = Math.max(1, Math.min(40, frames));
         double speed = Math.hypot(previous.dx(), previous.dz());
-        double retention = blockFriction * horizontalDrag;
+        double retention = groundRetention(blockFriction, horizontalDrag, velocityMultiplier);
         double acceleration = groundAcceleration(movementSpeed, blockFriction)
                 * maximumClientInputLength(sneakingSpeed, itemUseMultiplier);
         double distance = 0;
@@ -123,6 +164,11 @@ public final class MotionPredictor {
             distance += speed;
         }
         return distance;
+    }
+
+    private static double groundRetention(float blockFriction, float horizontalDrag,
+                                          float velocityMultiplier) {
+        return (double) (blockFriction * horizontalDrag * velocityMultiplier);
     }
 
     static double maximumClientInputLength(float sneakingSpeed, float itemUseMultiplier) {
@@ -205,9 +251,17 @@ public final class MotionPredictor {
                                              double movementSpeed, float blockFriction,
                                              float horizontalDrag, float sneakingSpeed,
                                              float itemUseMultiplier) {
+        return predictGroundClient(previous, actual, yaw, movementSpeed, blockFriction,
+                horizontalDrag, sneakingSpeed, itemUseMultiplier, 1.0f);
+    }
+
+    public static Result predictGroundClient(Motion previous, Motion actual, float yaw,
+                                             double movementSpeed, float blockFriction,
+                                             float horizontalDrag, float sneakingSpeed,
+                                             float itemUseMultiplier, float velocityMultiplier) {
         return predictCandidatesClient(previous, actual, yaw,
                 groundAcceleration(movementSpeed, blockFriction),
-                (double) (blockFriction * horizontalDrag),
+                groundRetention(blockFriction, horizontalDrag, velocityMultiplier),
                 sneakingSpeed, itemUseMultiplier);
     }
 
@@ -215,9 +269,18 @@ public final class MotionPredictor {
                                                   double movementSpeed, float blockFriction,
                                                   float horizontalDrag, float sneakingSpeed,
                                                   float itemUseMultiplier, Input input) {
+        return predictGroundInputClient(previous, actual, yaw, movementSpeed, blockFriction,
+                horizontalDrag, sneakingSpeed, itemUseMultiplier, 1.0f, input);
+    }
+
+    public static Result predictGroundInputClient(Motion previous, Motion actual, float yaw,
+                                                  double movementSpeed, float blockFriction,
+                                                  float horizontalDrag, float sneakingSpeed,
+                                                  float itemUseMultiplier, float velocityMultiplier,
+                                                  Input input) {
         return predictOneClient(previous, actual, yaw,
                 groundAcceleration(movementSpeed, blockFriction),
-                (double) (blockFriction * horizontalDrag),
+                groundRetention(blockFriction, horizontalDrag, velocityMultiplier),
                 sneakingSpeed, itemUseMultiplier,
                 input.forwardAxis(), input.strafeAxis());
     }
