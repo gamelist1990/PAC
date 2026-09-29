@@ -12,6 +12,7 @@ import org.bukkit.craftbukkit.block.CraftBlock;
 import org.bukkit.craftbukkit.entity.CraftPlayer;
 import org.bukkit.craftbukkit.entity.CraftEntity;
 import org.bukkit.entity.Entity;
+import org.bukkit.entity.FallingBlock;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -22,6 +23,7 @@ import org.bukkit.event.block.BlockRedstoneEvent;
 import org.bukkit.event.block.BlockPistonExtendEvent;
 import org.bukkit.event.block.BlockPistonRetractEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
+import org.bukkit.event.entity.EntityChangeBlockEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import io.papermc.paper.event.entity.EntityCollideWithEntityEvent;
 import com.destroystokyo.paper.event.player.PlayerElytraBoostEvent;
@@ -1418,6 +1420,19 @@ public final class MotionEnvironment implements Listener {
         if (event.getBlock().getBlockData() instanceof Openable) {
             graceNearby(event.getBlock().getLocation());
         }
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onFallingBlockCollisionChange(EntityChangeBlockEvent event) {
+        if (!(event.getEntity() instanceof FallingBlock)) return;
+        // Sand/gravel and other falling blocks can become solid while overlapping
+        // a player. Vanilla then runs pushOutOfBlocks and may move the player
+        // horizontally even with no movement input. Publish the changed cell into
+        // the same bounded collision-change window used by pistons/doors so motion
+        // prediction does not attribute that client correction to self movement.
+        Block changed = event.getBlock();
+        invalidateCollisionShapesAround(changed);
+        graceNearby(changed.getLocation());
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)

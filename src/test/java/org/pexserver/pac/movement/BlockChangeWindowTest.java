@@ -32,6 +32,19 @@ class BlockChangeWindowTest {
         assertFalse(window.affects(world, 0, 64, 0, 1, 64, 0, 1_050));
     }
 
+    @Test void bodyBlockChangeCoversVanillaPushOutMovement() {
+        UUID world = UUID.randomUUID();
+        BlockChangeWindow window = new BlockChangeWindow();
+        // A falling sand/gravel block can become solid inside the player's body
+        // (feet at Y=64, body extends to about Y=65.8) before the client pushes out.
+        window.record(world, 0, 65, 0, 1_000, 1_200);
+
+        assertTrue(window.affects(world, 0.5, 64, 0.5, 0.595, 64, 0.5, 1_050),
+                "horizontal pushOutOfBlocks displacement must be tied to the changed body cell");
+        assertFalse(window.affects(world, 3, 64, 3, 3.095, 64, 3, 1_050),
+                "the falling-block grace must stay spatially local");
+    }
+
     @Test void eventHistoryHasAFixedBound() {
         UUID world = UUID.randomUUID();
         BlockChangeWindow window = new BlockChangeWindow();
