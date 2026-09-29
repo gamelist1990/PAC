@@ -45,9 +45,11 @@ public final class ReachCheck extends AbstractCheck implements EventCheck, Liste
         Attack attack = attacks.remove(uuid);
         long now = System.currentTimeMillis();
         long attackAt = attack == null ? now : attack.at();
+        // Reach is reconstructed at server receive time. Reported RTT is not
+        // trusted for geometry because keepalive-only PingSpoof can inflate it
+        // without delaying ATTACK or movement packets.
         long rewindMillis = CombatTargetHistory.trustedRewindMillis(player.getPing());
-        int trustedPing = (int) Math.min(Integer.MAX_VALUE, rewindMillis * 2L);
-        var frame = plugin.environment().predictionFrame(uuid, attackAt, trustedPing);
+        var frame = plugin.environment().predictionFrame(uuid, attackAt, 0);
         Vector eye = frame == null || frame.environment() == null
             ? player.getEyeLocation().toVector()
             : new Vector(frame.environment().x(), frame.environment().y() + player.getEyeHeight(),
@@ -56,7 +58,7 @@ public final class ReachCheck extends AbstractCheck implements EventCheck, Liste
         BoundingBox box = victim.getBoundingBox();
         if (victim instanceof Player victimPlayer) {
             CombatTargetHistory.Frame target = targetHistory.atOrBefore(victimPlayer.getUniqueId(),
-                    victimPlayer.getWorld().getUID(), attackAt - rewindMillis);
+                    victimPlayer.getWorld().getUID(), attackAt);
             if (target != null && attackAt >= target.at() && attackAt - target.at() <= 500)
                 box = target.box();
         }
@@ -67,9 +69,9 @@ public final class ReachCheck extends AbstractCheck implements EventCheck, Liste
         double distance = Math.sqrt(x*x + y*y + z*z);
         var attribute = player.getAttribute(Attribute.ENTITY_INTERACTION_RANGE);
         double baseReach = attribute == null ? 3.0 : attribute.getValue();
-        // Ping changes which historical box is inspected; it no longer grants
-        // raw extra reach. This prevents keepalive-only PingSpoof from turning
-        // a large reported RTT directly into additional attack distance.
+        // Neither reach distance nor rewind time is derived from reported RTT.
+        // This closes the remaining keepalive-only PingSpoof history-selection
+        // bypass while preserving server-tick history at the ATTACK receive time.
         double maxDistance = baseReach + 0.1;
         double expansion = 0.1;
         boolean rayHit = attack != null && attack.entityId() == victim.getEntityId()
