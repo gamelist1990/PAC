@@ -273,7 +273,8 @@ public final class KillAuraCheck extends AbstractCheck implements PacketCheck, E
                 "model_severity", (double) prediction.severity().getLevel(),
                 "model_priority", (double) prediction.priority(),
                 "model_count", (double) prediction.models().size());
-        flagLimited(uuid, () -> plugin.flag(uuid, this, detail, metrics, weight));
+        reportType(uuid, state, KillAuraType.E, "pretrained aim model",
+                detail, metrics, weight);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
