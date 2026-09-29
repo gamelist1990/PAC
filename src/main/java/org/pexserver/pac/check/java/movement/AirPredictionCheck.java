@@ -373,10 +373,11 @@ public final class AirPredictionCheck extends AbstractCheck implements PacketChe
                 && Math.abs(impulse.z() - grant.velocityZ()) < 1.0e-6;
     }
 
-    private static boolean flightHoverEligible(
+    static boolean flightHoverEligible(
             org.pexserver.pac.movement.MotionEnvironment.Snapshot environment,
             boolean noRecentExternalMotion, long now) {
-        return noRecentExternalMotion && environment != null && environment.verticalAir()
+        return noRecentExternalMotion && environment != null && environment.gravityAirborne()
+                && environment.stuckVerticalMultiplier() >= 0.999f
                 && !environment.slowFalling() && environment.levitationAmplifier() < 0
                 && environment.gravity() >= 0.04
                 && now >= environment.capturedAt() && now - environment.capturedAt() <= 200;
