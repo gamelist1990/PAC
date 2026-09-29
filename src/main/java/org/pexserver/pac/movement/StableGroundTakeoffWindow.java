@@ -50,8 +50,8 @@ public final class StableGroundTakeoffWindow {
                     double step = allowedStep;
                     resetArm();
                     consumedGroundTick = tick;
-                    return new Sample(true, rise,
-                            rise > jump && rise > step, jump, step);
+                    return new Sample(true, rise > jump && rise > step,
+                            rise, jump, step);
                 }
                 if (rise < -0.04 || horizontal > 1.5) resetArm();
             }
@@ -72,9 +72,9 @@ public final class StableGroundTakeoffWindow {
         double riseFromSnapshot = packetY - environment.y();
         if (riseFromSnapshot > 0.035) {
             consumedGroundTick = ground.tick();
-            return new Sample(true, riseFromSnapshot,
+            return new Sample(true,
                     riseFromSnapshot > jumpLimit && riseFromSnapshot > stepLimit,
-                    jumpLimit, stepLimit);
+                    riseFromSnapshot, jumpLimit, stepLimit);
         }
 
         if (Math.abs(riseFromSnapshot) <= 0.03) {
