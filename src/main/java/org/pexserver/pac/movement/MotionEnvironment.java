@@ -66,20 +66,41 @@ public final class MotionEnvironment implements Listener {
                            float jumpStrength, boolean slowFalling,
                            int levitationAmplifier, boolean verticalAir,
                            float sneakingSpeed, float itemUseMultiplier,
-                           float stuckHorizontalMultiplier, float stuckVerticalMultiplier) {
+                           float stuckHorizontalMultiplier, float stuckVerticalMultiplier,
+                           boolean gravityAirborne) {
+        public Snapshot(boolean ordinaryGround, boolean ordinaryAir,
+                        boolean sprinting, boolean sneaking, boolean usingItem,
+                        float yaw, double movementSpeed,
+                        double x, double y, double z,
+                        int tick, long capturedAt,
+                        boolean wallAdjacent, boolean waterSurface,
+                        float groundFriction,
+                        double gravity, float horizontalDrag, float verticalDrag,
+                        float jumpStrength, boolean slowFalling,
+                        int levitationAmplifier, boolean verticalAir,
+                        float sneakingSpeed, float itemUseMultiplier,
+                        float stuckHorizontalMultiplier, float stuckVerticalMultiplier) {
+            this(ordinaryGround, ordinaryAir, sprinting, sneaking, usingItem,
+                    yaw, movementSpeed, x, y, z, tick, capturedAt,
+                    wallAdjacent, waterSurface, groundFriction,
+                    gravity, horizontalDrag, verticalDrag, jumpStrength,
+                    slowFalling, levitationAmplifier, verticalAir,
+                    sneakingSpeed, itemUseMultiplier,
+                    stuckHorizontalMultiplier, stuckVerticalMultiplier, verticalAir);
+        }
         public Snapshot withMovementSpeed(double speed) {
             return new Snapshot(ordinaryGround, ordinaryAir, sprinting, sneaking, usingItem,
                     yaw, speed, x, y, z, tick, capturedAt, wallAdjacent, waterSurface, groundFriction,
                     gravity, horizontalDrag, verticalDrag, jumpStrength, slowFalling,
                     levitationAmplifier, verticalAir, sneakingSpeed, itemUseMultiplier,
-                    stuckHorizontalMultiplier, stuckVerticalMultiplier);
+                    stuckHorizontalMultiplier, stuckVerticalMultiplier, gravityAirborne);
         }
                 public Snapshot withSprinting(boolean sprinting, double speed) {
                     return new Snapshot(ordinaryGround, ordinaryAir, sprinting, sneaking, usingItem,
                         yaw, speed, x, y, z, tick, capturedAt, wallAdjacent, waterSurface, groundFriction,
                         gravity, horizontalDrag, verticalDrag, jumpStrength, slowFalling,
                         levitationAmplifier, verticalAir, sneakingSpeed, itemUseMultiplier,
-                        stuckHorizontalMultiplier, stuckVerticalMultiplier);
+                        stuckHorizontalMultiplier, stuckVerticalMultiplier, gravityAirborne);
                 }
         public Snapshot(boolean ordinaryGround, boolean ordinaryAir,
                         boolean sprinting, boolean sneaking, boolean usingItem,
@@ -786,6 +807,10 @@ public final class MotionEnvironment implements Listener {
                 && Float.isFinite(useMultiplier) && useMultiplier >= 0 && useMultiplier <= 4
                 && levitationAmplifier >= -1 && levitationAmplifier <= 20;
         boolean knownGround = state != null && state.known();
+        // Hover detection only needs to know that normal gravity applies while
+        // the player has no support. verticalAir stays stricter because the
+        // free-fall predictor requires extra collision-free room.
+        boolean gravityAirborne = supported && knownGround && !state.onGround();
         boolean usableGroundSpeed = movementSpeed != null
                 && Double.isFinite(movementSpeed.getValue())
                 && movementSpeed.getValue() >= 0 && movementSpeed.getValue() <= 1024;
@@ -836,7 +861,7 @@ public final class MotionEnvironment implements Listener {
                 player.hasPotionEffect(org.bukkit.potion.PotionEffectType.SLOW_FALLING),
                 levitationAmplifier, verticalAir,
                 Double.isFinite(sneakValue) ? (float) sneakValue : 0.3f, useMultiplier,
-                stuckHorizontalMultiplier, stuckVerticalMultiplier);
+                stuckHorizontalMultiplier, stuckVerticalMultiplier, gravityAirborne);
     }
 
     private boolean insideCobweb(Player player) {

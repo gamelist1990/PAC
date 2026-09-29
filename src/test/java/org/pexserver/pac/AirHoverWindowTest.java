@@ -83,6 +83,18 @@ class AirHoverWindowTest {
         assertTrue(detected);
     }
 
+    @Test void repeatedCeilingClippedLowHopsAreNotHover() {
+        var window = new AirHoverWindow();
+        long start = 1_000;
+        for (int tick = 0; tick <= 120; tick++) {
+            int phase = tick % 4;
+            boolean airborne = phase == 1 || phase == 2;
+            double y = phase == 1 ? 64.08 : phase == 2 ? 64.04 : 64.0;
+            assertFalse(window.sample(airborne, y, start + tick * 50L),
+                    "frequent real ground contact must not become near-ground hover: " + tick);
+        }
+    }
+
     @Test void legitimateJumpHeightAndUntrustedMovementDoNotBuildHoverEvidence() {
         var window = new AirHoverWindow();
         for (int tick = 0; tick <= 60; tick++) {
