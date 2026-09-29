@@ -13,9 +13,10 @@ final class CombatPatternMonitor {
     private static final long RAPID_SWITCH_MILLIS = 100L;
     private static final int ROTATION_WINDOW = 15;
     private static final int ATTACK_WINDOW = 20;
-    private static final double SMOOTH_VARIANCE = 0.0001;
+    private static final double SMOOTH_RELATIVE_VARIANCE = 0.0005;
 
-    record Finding(String source, String detail, Map<String, Double> metrics, int weight) { }
+    record Finding(KillAuraType type, String source, String detail,
+                   Map<String, Double> metrics, int weight) { }
 
     private final Deque<Double> rotationDeltas = new ArrayDeque<>();
     private final Deque<Long> attackTimes = new ArrayDeque<>();
@@ -40,7 +41,7 @@ final class CombatPatternMonitor {
 
         double yawDelta = Math.abs(wrapDegrees(yaw - lastYaw));
         double pitchDelta = Math.abs(pitch - lastPitch);
-        double totalDelta = yawDelta + pitchDelta;
+        double totalDelta = Math.hypot(yawDelta, pitchDelta);
         lastYaw = yaw;
         lastPitch = pitch;
 
@@ -57,17 +58,21 @@ final class CombatPatternMonitor {
         while (rotationDeltas.size() > ROTATION_WINDOW) rotationDeltas.removeFirst();
         if (rotationDeltas.size() < ROTATION_WINDOW) return null;
 
-        double variance = variance(rotationDeltas);
-        if (variance < SMOOTH_VARIANCE) smoothViolations++;
-        else smoothViolations = Math.max(0.0, smoothViolations - 0.2);
+        double mean = mean(rotationDeltas);
+        double variance = variance(rotationDeltas, mean);
+        double relativeVariance = variance / Math.max(1.0E-6, mean * mean);
+        if (relativeVariance < SMOOTH_RELATIVE_VARIANCE) smoothViolations++;
+        else smoothViolations = Math.max(0.0, smoothViolations - 0.25);
 
         if (smoothViolations < 25.0 || hitTimes.size() < 5) return null;
         int recentAttacks = attackTimes.size();
-        Finding finding = new Finding("aimbot-smoothing",
+        Finding finding = new Finding(KillAuraType.E, "aimbot-smoothing",
                 String.format(java.util.Locale.ROOT,
-                        "stable rotation deltas while repeatedly landing hits: variance=%.7f samples=%d hits=%d attacks=%d",
-                        variance, rotationDeltas.size(), hitTimes.size(), recentAttacks),
-                Map.of("rotation_delta_variance", variance,
+                        "stable 2D rotation speed while repeatedly landing hits: variance=%.7f relative=%.7f samples=%d hits=%d attacks=%d",
+                        variance, relativeVariance, rotationDeltas.size(), hitTimes.size(), recentAttacks),
+                Map.of("rotation_speed_mean", mean,
+                        "rotation_speed_variance", variance,
+                        "rotation_relative_variance", relativeVariance,
                         "rotation_samples", (double) rotationDeltas.size(),
                         "confirmed_hits", (double) hitTimes.size(),
                         "recent_attack_packets", (double) recentAttacks,
@@ -98,7 +103,7 @@ final class CombatPatternMonitor {
         }
 
         if (rapidSwitchStreak < 3 || hitTimes.size() < 2) return null;
-        Finding finding = new Finding("rapid-target-switch",
+        Finding finding = new Finding(KillAuraType.D, "rapid-target-switch",
                 String.format(java.util.Locale.ROOT,
                         "rapid target switching during confirmed combat: streak=%d interval=%dms hits=%d attacks=%d",
                         rapidSwitchStreak, switchInterval, hitTimes.size(), attackTimes.size()),
@@ -145,8 +150,11 @@ final class CombatPatternMonitor {
         }
     }
 
-    private static double variance(Deque<Double> values) {
-        double mean = values.stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
+    private static double mean(Deque<Double> values) {
+        return values.stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
+    }
+
+    private static double variance(Deque<Double> values, double mean) {
         return values.stream().mapToDouble(value -> (value - mean) * (value - mean)).average().orElse(0.0);
     }
 

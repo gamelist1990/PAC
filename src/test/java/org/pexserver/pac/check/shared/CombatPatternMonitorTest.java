@@ -52,9 +52,10 @@ class CombatPatternMonitorTest {
         }
 
         assertNotNull(finding);
+        assertEquals(KillAuraType.E, finding.type());
         assertEquals("aimbot-smoothing", finding.source());
         assertTrue(finding.metrics().get("confirmed_hits") >= 5.0);
-        assertTrue(finding.metrics().get("rotation_delta_variance") < 0.0001);
+        assertTrue(finding.metrics().get("rotation_relative_variance") < 0.0005);
     }
 
     @Test void variableAimDoesNotTriggerSmoothing() {
@@ -87,6 +88,7 @@ class CombatPatternMonitorTest {
         CombatPatternMonitor.Finding finding = monitor.attackPacket(4, now + 60);
 
         assertNotNull(finding);
+        assertEquals(KillAuraType.D, finding.type());
         assertEquals("rapid-target-switch", finding.source());
         assertEquals(3.0, finding.metrics().get("rapid_switch_streak"));
     }
