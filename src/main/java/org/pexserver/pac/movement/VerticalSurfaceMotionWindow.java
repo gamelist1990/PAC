@@ -64,6 +64,8 @@ public final class VerticalSurfaceMotionWindow {
         }
 
         double dy = nextY - y;
+        double previousDy = lastDy;
+        boolean hadPendingBounce = bounceExpected;
         y = nextY;
         lastAt = now;
 
@@ -110,10 +112,11 @@ public final class VerticalSurfaceMotionWindow {
         // player is intentionally suppressing bounce (sneaking).
         if (environment.ordinaryGround() && environment.specialVerticalSurface()
                 && environment.bounceRestitution() > 0.0f
-                && !environment.sneaking() && lastDy < -MIN_FALL_FOR_BOUNCE
+                && !environment.sneaking() && !hadPendingBounce
+                && previousDy < -MIN_FALL_FOR_BOUNCE
                 && environment.near(x, nextY, z)) {
             expectedBounce = Math.max(0.0,
-                    (-lastDy - environment.gravity()) * environment.bounceRestitution());
+                    (-previousDy - environment.gravity()) * environment.bounceRestitution());
             if (expectedBounce >= 0.08) {
                 expectedRestitution = environment.bounceRestitution();
                 bounceExpected = true;
@@ -121,7 +124,7 @@ public final class VerticalSurfaceMotionWindow {
             }
         }
 
-        rememberGround(environment, now);
+        if (dy <= 0.03) rememberGround(environment, now);
         lastDy = dy;
         return Finding.none();
     }
