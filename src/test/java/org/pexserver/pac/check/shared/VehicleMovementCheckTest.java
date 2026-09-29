@@ -71,4 +71,24 @@ class VehicleMovementCheckTest {
                 "server-authoritative vehicle momentum must expand the packet envelope");
     }
 
+    @Test void repeatedVehiclePacketsWithoutServerControlBecomeEvidence() {
+        var window = new VehicleMovementCheck.UnauthorizedControlWindow();
+        var vehicle = java.util.UUID.randomUUID();
+
+        assertFalse(window.sample(vehicle, true, 1_000));
+        assertTrue(window.sample(vehicle, true, 1_050));
+    }
+
+    @Test void authorizedControlAndVehicleChangesResetUnauthorizedEvidence() {
+        var window = new VehicleMovementCheck.UnauthorizedControlWindow();
+        var first = java.util.UUID.randomUUID();
+        var second = java.util.UUID.randomUUID();
+
+        assertFalse(window.sample(first, true, 1_000));
+        assertFalse(window.sample(first, false, 1_050));
+        assertFalse(window.sample(first, true, 1_100));
+        assertFalse(window.sample(second, true, 1_150));
+        assertTrue(window.sample(second, true, 1_200));
+    }
+
 }
