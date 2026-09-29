@@ -79,7 +79,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public final class PacPlugin extends JavaPlugin implements Listener {
     static final String CONFIG_VERSION_KEY = "config-version";
-    static final int CONFIG_VERSION = 16;
+    static final int CONFIG_VERSION = 17;
     private static final String DEFAULT_BAN_SUFFIX = "&7Support: &bdiscord.gg/xxxx";
     private static final String DEFAULT_KICK_SUFFIX = "";
     private static final long JAVA_CORRECTION_INTERVAL_NANOS = 50_000_000L;
@@ -401,6 +401,9 @@ public final class PacPlugin extends JavaPlugin implements Listener {
             setDefault("detectors.exploit-actions.cancel", true);
             setDefault("detectors.exploit-actions.alert-score-threshold", 1);
             setDefault("detectors.exploit-actions.kick-score-threshold", 10);
+        }
+        if (version < 17) {
+            setDefault("detectors.packet-flood.max-decoded-per-second", 1200);
         }
         if (version < CONFIG_VERSION) {
             getConfig().set(CONFIG_VERSION_KEY, CONFIG_VERSION);
