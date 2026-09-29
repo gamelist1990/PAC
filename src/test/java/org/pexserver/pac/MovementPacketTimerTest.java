@@ -76,4 +76,26 @@ class MovementPacketTimerTest {
                 "most packets in the self-damage burst must be rejected after confirmation");
     }
 
+    @Test void liquidBounceTimeShiftFullPacketBurstIsRejected() {
+        var timer = new MovementPacketTimer();
+        long now = 9_000_000_000L;
+        int rejected = 0;
+        int firstRejectedAt = -1;
+
+        // Current TimeShift can emit up to 100 FULL movement packets from one
+        // client tick. Equal coordinates still represent client simulation
+        // steps because the packet includes a position.
+        for (int packet = 0; packet < 100; packet++) {
+            boolean blocked = timer.accept(now);
+            if (blocked) {
+                rejected++;
+                if (firstRejectedAt < 0) firstRejectedAt = packet;
+            }
+        }
+
+        assertTrue(firstRejectedAt >= 0 && firstRejectedAt <= 36);
+        assertTrue(rejected > 50,
+                "most injected TimeShift simulation steps must be rejected");
+    }
+
 }
