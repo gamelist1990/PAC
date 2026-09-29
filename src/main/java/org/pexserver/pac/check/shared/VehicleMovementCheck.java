@@ -2,8 +2,10 @@ package org.pexserver.pac.check.shared;
 
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
+import org.bukkit.attribute.Attribute;
 import org.bukkit.entity.Boat;
 import org.bukkit.entity.Entity;
+import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
 import org.bukkit.craftbukkit.entity.CraftEntity;
 import org.bukkit.craftbukkit.entity.CraftPlayer;
@@ -13,6 +15,7 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.vehicle.VehicleExitEvent;
 import org.bukkit.util.Vector;
+import org.bukkit.potion.PotionEffectType;
 import org.pexserver.pac.PacPlugin;
 import org.pexserver.pac.check.core.AbstractCheck;
 import org.pexserver.pac.check.core.EventCheck;
@@ -114,7 +117,9 @@ public final class VehicleMovementCheck extends AbstractCheck implements EventCh
                                          double x, double y, double z,
                                          double velocityX, double velocityY, double velocityZ,
                                          boolean gravity, boolean airborne, boolean inWater,
-                                         boolean serverControlled, long sampledAt) { }
+                                         boolean serverControlled, boolean strictLivingAir,
+                                         double livingGravity, float livingVerticalDrag,
+                                         long sampledAt) { }
 
     record VehiclePacketFinding(boolean evaluated, boolean impossible,
                                 double horizontal, double vertical,
@@ -153,6 +158,81 @@ public final class VehicleMovementCheck extends AbstractCheck implements EventCh
         }
     }
 
+    static final class LivingVehicleAirWindow {
+        private static final long MIN_PACKET_GAP_MILLIS = 20;
+        private static final long MAX_PACKET_GAP_MILLIS = 90;
+        private static final double VERTICAL_RESIDUAL_TOLERANCE = 0.055;
+        private static final int REQUIRED_RESIDUALS = 3;
+
+        private UUID vehicleId;
+        private double lastY;
+        private double previousDy;
+        private long lastAt;
+        private boolean haveDy;
+        private int residuals;
+
+        AirFinding sample(UUID nextVehicleId, boolean eligible,
+                          double targetY, double gravity, float verticalDrag, long now) {
+            if (!eligible || nextVehicleId == null || !Double.isFinite(targetY)
+                    || !Double.isFinite(gravity) || !Float.isFinite(verticalDrag)) {
+                reset();
+                return AirFinding.valid();
+            }
+            if (vehicleId == null || !vehicleId.equals(nextVehicleId)
+                    || lastAt == 0 || now < lastAt || now - lastAt > MAX_PACKET_GAP_MILLIS) {
+                seed(nextVehicleId, targetY, now);
+                return AirFinding.valid();
+            }
+            long gap = now - lastAt;
+            if (gap < MIN_PACKET_GAP_MILLIS) {
+                // Duplicate/queued packets do not represent another physics tick.
+                lastY = targetY;
+                lastAt = now;
+                haveDy = false;
+                residuals = 0;
+                return AirFinding.valid();
+            }
+
+            double dy = targetY - lastY;
+            lastY = targetY;
+            lastAt = now;
+            if (!haveDy) {
+                previousDy = dy;
+                haveDy = true;
+                return AirFinding.valid();
+            }
+
+            double expected = (previousDy - gravity) * verticalDrag;
+            double residual = Math.abs(dy - expected);
+            previousDy = dy;
+            residuals = residual > VERTICAL_RESIDUAL_TOLERANCE
+                    ? Math.min(REQUIRED_RESIDUALS, residuals + 1)
+                    : Math.max(0, residuals - 1);
+            return new AirFinding(residuals >= REQUIRED_RESIDUALS,
+                    dy, expected, residual, residuals);
+        }
+
+        private void seed(UUID nextVehicleId, double y, long now) {
+            vehicleId = nextVehicleId;
+            lastY = y;
+            lastAt = now;
+            haveDy = false;
+            residuals = 0;
+        }
+
+        void reset() {
+            vehicleId = null;
+            lastAt = 0;
+            haveDy = false;
+            residuals = 0;
+        }
+    }
+
+    record AirFinding(boolean impossible, double dy, double expectedDy,
+                      double residual, int streak) {
+        static AirFinding valid() { return new AirFinding(false, 0, 0, 0, 0); }
+    }
+
     private record VehicleState(UUID driver, GenericVehicleWindow window) { }
 
     private final PacPlugin plugin;
@@ -161,6 +241,8 @@ public final class VehicleMovementCheck extends AbstractCheck implements EventCh
     private final ConcurrentHashMap<UUID, PacketVehicleSnapshot> packetVehicles =
             new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, UnauthorizedControlWindow> unauthorizedControl =
+            new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<UUID, LivingVehicleAirWindow> livingVehicleAir =
             new ConcurrentHashMap<>();
 
     public VehicleMovementCheck(PacPlugin plugin) {
@@ -236,6 +318,18 @@ public final class VehicleMovementCheck extends AbstractCheck implements EventCh
             return true;
         }
 
+        LivingVehicleAirWindow airWindow = livingVehicleAir.computeIfAbsent(
+                uuid, ignored -> new LivingVehicleAirWindow());
+        AirFinding airFinding = airWindow.sample(state.vehicleId(), state.strictLivingAir(),
+                targetY, state.livingGravity(), state.livingVerticalDrag(), now);
+        if (airFinding.impossible()) {
+            flagLimited(uuid, () -> plugin.flag(uuid, this, String.format(java.util.Locale.ROOT,
+                    "living vehicle vertical physics mismatch: type=%s dy=%.3f expected=%.3f residual=%.3f streak=%d",
+                    state.type(), airFinding.dy(), airFinding.expectedDy(),
+                    airFinding.residual(), airFinding.streak())));
+            return plugin.cancel(this, uuid);
+        }
+
         VehiclePacketFinding finding = packetFinding(
                 state.x(), state.y(), state.z(),
                 state.velocityX(), state.velocityY(), state.velocityZ(),
@@ -281,6 +375,7 @@ public final class VehicleMovementCheck extends AbstractCheck implements EventCh
                     || !vehicle.getPassengers().get(0).getUniqueId().equals(uuid)) {
                 packetVehicles.remove(uuid);
                 unauthorizedControl.remove(uuid);
+                livingVehicleAir.remove(uuid);
                 continue;
             }
 
@@ -289,13 +384,34 @@ public final class VehicleMovementCheck extends AbstractCheck implements EventCh
             boolean serverControlled = vehicle instanceof CraftEntity craftVehicle
                     && ((CraftPlayer) player).getHandle().equals(
                             craftVehicle.getHandle().getControllingPassenger());
+            double livingGravity = Double.NaN;
+            float livingVerticalDrag = Float.NaN;
+            boolean strictLivingAir = false;
+            if (vehicle instanceof LivingEntity living) {
+                var gravityAttribute = living.getAttribute(Attribute.GRAVITY);
+                var dragAttribute = living.getAttribute(Attribute.AIR_DRAG_MODIFIER);
+                double gravityValue = gravityAttribute == null ? Double.NaN : gravityAttribute.getValue();
+                double dragModifier = dragAttribute == null ? Double.NaN : dragAttribute.getValue();
+                if (Double.isFinite(gravityValue) && gravityValue >= 0 && gravityValue <= 1
+                        && Double.isFinite(dragModifier) && dragModifier >= 0 && dragModifier <= 16
+                        && !living.hasPotionEffect(PotionEffectType.LEVITATION)
+                        && !living.hasPotionEffect(PotionEffectType.SLOW_FALLING)) {
+                    livingGravity = gravityValue;
+                    livingVerticalDrag = Math.max(0.0f,
+                            Math.min(1.0f, 1.0f - (1.0f - 0.98f) * (float) dragModifier));
+                    strictLivingAir = serverControlled && living.hasGravity()
+                            && !living.isOnGround() && !living.isInWater()
+                            && !living.isInLava() && !living.isClimbing();
+                }
+            }
             packetVehicles.put(uuid, new PacketVehicleSnapshot(
                     vehicle.getUniqueId(), vehicle.getType().name(),
                     sampled.getX(), sampled.getY(), sampled.getZ(),
                     sampledVelocity.getX(), sampledVelocity.getY(), sampledVelocity.getZ(),
                     vehicle.hasGravity(),
                     vehicle.hasGravity() && !vehicle.isOnGround() && !vehicle.isInWater(),
-                    vehicle.isInWater(), serverControlled, System.currentTimeMillis()));
+                    vehicle.isInWater(), serverControlled, strictLivingAir,
+                    livingGravity, livingVerticalDrag, System.currentTimeMillis()));
 
             if (vehicle instanceof Boat) continue;
             UUID vehicleId = vehicle.getUniqueId();
@@ -336,6 +452,7 @@ public final class VehicleMovementCheck extends AbstractCheck implements EventCh
         dismounts.remove(uuid);
         packetVehicles.remove(uuid);
         unauthorizedControl.remove(uuid);
+        livingVehicleAir.remove(uuid);
         vehicles.entrySet().removeIf(entry -> entry.getValue().driver().equals(uuid));
     }
 }
