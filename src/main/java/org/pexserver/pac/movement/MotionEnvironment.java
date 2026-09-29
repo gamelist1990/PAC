@@ -124,6 +124,13 @@ public final class MotionEnvironment implements Listener {
                         levitationAmplifier, verticalAir, sneakingSpeed, itemUseMultiplier,
                         stuckHorizontalMultiplier, stuckVerticalMultiplier, gravityAirborne, blockSpeedFactor);
                 }
+        public Snapshot withBlockSpeedFactor(float factor) {
+            return new Snapshot(ordinaryGround, ordinaryAir, sprinting, sneaking, usingItem,
+                    yaw, movementSpeed, x, y, z, tick, capturedAt, wallAdjacent, waterSurface, groundFriction,
+                    gravity, horizontalDrag, verticalDrag, jumpStrength, slowFalling,
+                    levitationAmplifier, verticalAir, sneakingSpeed, itemUseMultiplier,
+                    stuckHorizontalMultiplier, stuckVerticalMultiplier, gravityAirborne, factor);
+        }
         public Snapshot(boolean ordinaryGround, boolean ordinaryAir,
                         boolean sprinting, boolean sneaking, boolean usingItem,
                         float yaw, double movementSpeed,
