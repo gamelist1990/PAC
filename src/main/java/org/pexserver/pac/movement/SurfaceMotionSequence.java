@@ -2,7 +2,7 @@ package org.pexserver.pac.movement;
 
 /** Packet-order state for Java movement next to walls and liquid surfaces. */
 public final class SurfaceMotionSequence {
-    public enum Anomaly { NONE, WALL_CLIMB, LIQUID_GROUND_CLAIM, POWDER_SNOW_WALK, AIR_GROUND_CLAIM }
+    public enum Anomaly { NONE, WALL_CLIMB, WALL_CLIP, LIQUID_GROUND_CLAIM, POWDER_SNOW_WALK, AIR_GROUND_CLAIM }
     private double x, y, z;
     private boolean initialized;
     private long lastAt;
@@ -60,9 +60,17 @@ public final class SurfaceMotionSequence {
         double ny = hasPosition ? packetY : y;
         double nz = hasPosition ? packetZ : z;
         double dy = ny - y;
+        boolean previousUsable = initialized && lastAt > 0 && now - lastAt < 250
+                && environment != null && now - environment.capturedAt() <= 200
+                && environment.near(x, y, z);
         boolean usable = initialized && lastAt > 0 && now - lastAt < 250
                 && environment != null && now - environment.capturedAt() <= 200
                 && environment.near(nx, ny, nz);
+        double impossibleWallRise = environment == null ? Double.POSITIVE_INFINITY
+                : Math.max(1.5, environment.jumpStrength() + 0.5);
+        boolean wallClip = previousUsable && environment.wallAdjacent()
+                && environment.levitationAmplifier() < 0
+                && dy > impossibleWallRise;
         // A wind charge or other vanilla impulse can lift a player alongside
         // a wall. Its rising velocity decays by gravity; Spider's repeated
         // wall climb instead keeps roughly the same upward step.
@@ -84,6 +92,7 @@ public final class SurfaceMotionSequence {
         lastDy = dy;
         initialized = true;
         lastAt = now;
+        if (wallClip) { wallRise = 0; return Anomaly.WALL_CLIP; }
         if (powderSnowClaims >= 4) { powderSnowClaims = 0; return Anomaly.POWDER_SNOW_WALK; }
         if (airGroundClaims >= 4) { airGroundClaims = 0; return Anomaly.AIR_GROUND_CLAIM; }
         if (wallRise >= 8) { wallRise = 0; return Anomaly.WALL_CLIMB; }
