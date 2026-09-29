@@ -5,6 +5,7 @@ import com.github.retrooper.packetevents.event.PacketReceiveEvent;
 import com.github.retrooper.packetevents.protocol.packettype.PacketType;
 import com.github.retrooper.packetevents.protocol.player.ClientVersion;
 import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientPlayerFlying;
+import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientAttack;
 import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientInteractEntity;
 import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientClientStatus;
 import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientClickWindow;
@@ -155,23 +156,18 @@ public final class PacketChecks implements PacketListener, Listener {
                 plugin.inventoryMove().clientWindowClosed(eventUuid);
             return;
         }
+        if (event.getPacketType() == PacketType.Play.Client.ATTACK) {
+            UUID uuid = event.getUser().getUUID();
+            if (uuid == null) return;
+            handleAttackPacket(event, uuid, new WrapperPlayClientAttack(event).getEntityId());
+            return;
+        }
         if (event.getPacketType() == PacketType.Play.Client.INTERACT_ENTITY) {
             UUID uuid = event.getUser().getUUID();
             if (uuid == null) return;
             WrapperPlayClientInteractEntity interaction = new WrapperPlayClientInteractEntity(event);
-            if (interaction.getAction() == WrapperPlayClientInteractEntity.InteractAction.ATTACK) {
-                if (plugin.checks().get("critical-packet") instanceof CriticalPacketCheck critical)
-                    critical.onAttackPacket(uuid, event);
-                if (!event.isCancelled()
-                        && plugin.checks().get("kill-aura") instanceof KillAuraCheck killAura)
-                    killAura.onAttackPacket(uuid, interaction.getEntityId());
-                if (!event.isCancelled()
-                        && plugin.checks().get("reach") instanceof org.pexserver.pac.check.shared.ReachCheck reach)
-                    reach.onAttackPacket(uuid, interaction.getEntityId());
-                if (!event.isCancelled()
-                        && plugin.checks().get("air-prediction") instanceof AirPredictionCheck airPrediction)
-                    airPrediction.onAttackPacket(uuid);
-            }
+            if (interaction.getAction() == WrapperPlayClientInteractEntity.InteractAction.ATTACK)
+                handleAttackPacket(event, uuid, interaction.getEntityId());
             return;
         }
         if (event.getPacketType() == PacketType.Play.Client.TELEPORT_CONFIRM) {
@@ -230,6 +226,20 @@ public final class PacketChecks implements PacketListener, Listener {
                         location.getX(), location.getY(), location.getZ());
             }
         }
+    }
+
+    private void handleAttackPacket(PacketReceiveEvent event, UUID uuid, int entityId) {
+        if (plugin.checks().get("critical-packet") instanceof CriticalPacketCheck critical)
+            critical.onAttackPacket(uuid, event);
+        if (!event.isCancelled()
+                && plugin.checks().get("kill-aura") instanceof KillAuraCheck killAura)
+            killAura.onAttackPacket(uuid, entityId);
+        if (!event.isCancelled()
+                && plugin.checks().get("reach") instanceof org.pexserver.pac.check.shared.ReachCheck reach)
+            reach.onAttackPacket(uuid, entityId);
+        if (!event.isCancelled()
+                && plugin.checks().get("air-prediction") instanceof AirPredictionCheck airPrediction)
+            airPrediction.onAttackPacket(uuid);
     }
 
     public void forget(UUID uuid) {
