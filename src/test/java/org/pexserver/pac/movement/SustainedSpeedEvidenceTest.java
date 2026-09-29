@@ -107,6 +107,47 @@ class SustainedSpeedEvidenceTest {
         assertTrue(detected);
     }
 
+    @Test void slimeSlipperinessOverrideBuildsSustainedSpeedEvidence() {
+        var forward = new MotionPredictor.Input(true, false, false, false,
+                false, false, false);
+
+        var legitimate = new GroundMotionSequence();
+        var legitimateEvidence = new SustainedSpeedEvidence();
+        MotionPredictor.Motion legalMotion = new MotionPredictor.Motion(0, 0, 0);
+        double legalZ = 0;
+        legitimate.accept(true, true, 0, 64, 0, 0, slimeGround(0, 1), 1_000);
+        for (int frame = 2; frame <= 30; frame++) {
+            legalMotion = MotionPredictor.predictGroundInputClient(legalMotion,
+                    new MotionPredictor.Motion(0, 0, 0), 0, 0.1,
+                    0.8f, 0.91f, 1.0f, 1.0f, forward).closest();
+            legalZ += legalMotion.dz();
+            var sample = legitimate.accept(true, false, 0, 64, legalZ, 0,
+                    slimeGround(legalZ, frame), 1_000 + frame * 50L);
+            if (sample.evaluated()) assertFalse(legitimateEvidence.accept(sample.speedExcess()));
+        }
+
+        var noSlow = new GroundMotionSequence();
+        var noSlowEvidence = new SustainedSpeedEvidence();
+        MotionPredictor.Motion cheatedMotion = new MotionPredictor.Motion(0, 0, 0);
+        double cheatedZ = 0;
+        noSlow.accept(true, true, 0, 64, 0, 0, slimeGround(0, 1), 1_000);
+        boolean detected = false;
+        for (int frame = 2; frame <= 30; frame++) {
+            // LiquidBounce NoSlowSlime rewrites slime slipperiness from 0.8 to 0.6.
+            cheatedMotion = MotionPredictor.predictGroundInputClient(cheatedMotion,
+                    new MotionPredictor.Motion(0, 0, 0), 0, 0.1,
+                    0.6f, 0.91f, 1.0f, 1.0f, forward).closest();
+            cheatedZ += cheatedMotion.dz();
+            var sample = noSlow.accept(true, false, 0, 64, cheatedZ, 0,
+                    slimeGround(cheatedZ, frame), 1_000 + frame * 50L);
+            if (sample.evaluated() && noSlowEvidence.accept(sample.speedExcess())) {
+                detected = true;
+                break;
+            }
+        }
+        assertTrue(detected, "overriding slime slipperiness to ordinary ground must exceed the server model");
+    }
+
     @Test void cobwebSlowdownIsAcceptedButFullSpeedIsAccumulatedAsNoSlow() {
         var legitimate = new GroundMotionSequence();
         var legitimateEvidence = new SustainedSpeedEvidence();
@@ -171,7 +212,18 @@ class SustainedSpeedEvidenceTest {
     }
 
     private MotionEnvironment.Snapshot slowedGround(double z, int frame) {
-        return ground(z, frame, 0.1).withBlockSpeedFactor(0.4f);
+        // Honey has a special vertical response, but its horizontal 0.4 speed
+        // factor must still remain enforceable. The same multiplier covers soul sand.
+        return ground(z, frame, 0.1).withBlockSpeedFactor(0.4f)
+                .withSpecialVerticalSurface(true);
+    }
+
+    private MotionEnvironment.Snapshot slimeGround(double z, int frame) {
+        return new MotionEnvironment.Snapshot(true, false, false, false, false,
+                0, 0.1, 0, 64, z, frame, 1_000 + frame * 50L,
+                false, false, 0.8f, 0.08, 0.91f, 0.98f, 0.42f,
+                false, -1, false, 0.3f, 1.0f)
+                .withSpecialVerticalSurface(true);
     }
 
     private MotionEnvironment.Snapshot cobwebGround(double z, int frame) {
