@@ -115,6 +115,8 @@ public final class VehicleMovementCheck extends AbstractCheck implements EventCh
     }
 
     @Override public String key() { return "vehicle-movement"; }
+    @Override public boolean automaticBanEligible() { return false; }
+    @Override public boolean automaticKickEligible() { return false; }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onExit(VehicleExitEvent event) {
