@@ -103,28 +103,57 @@ public final class KillAuraCheck extends AbstractCheck implements PacketCheck, E
         processRotation(context.uuid(), context.location().getYaw(), context.location().getPitch(), context);
     }
 
-    /** Bedrock AuthInput uses the Bedrock combat suite, never the Java-trained MX suite. */
+    /** Bedrock AuthInput uses the shared combat suite, never the Java-trained MX suite. */
     public void onBedrockRotation(UUID uuid, float yaw, float pitch) {
+        onBedrockRotation(uuid, yaw, pitch, "UNKNOWN");
+    }
+
+    public void onBedrockRotation(UUID uuid, float yaw, float pitch, String inputMode) {
         if (deadPlayers.contains(uuid) || !plugin.enabled(uuid, this) || plugin.isExempt(uuid)) return;
         CombatState state = combat.computeIfAbsent(uuid, ignored -> new CombatState());
-        CombatPatternMonitor.Finding finding;
+        CombatPatternMonitor.Finding combatFinding = null;
+        AttackRotationSequence.Finding snapFinding = null;
         synchronized (state) {
+            boolean wasSupported = supportsBedrockInputMode(state.bedrockInputMode);
+            state.bedrockInputMode = normalizeBedrockInputMode(inputMode);
+            boolean supported = supportsBedrockInputMode(state.bedrockInputMode);
             state.latestYaw = yaw;
             state.latestPitch = pitch;
             state.latestLookAt = System.currentTimeMillis();
             state.hasLatestLook = Float.isFinite(yaw) && Float.isFinite(pitch);
-            finding = state.combatPatterns.sampleRotation(yaw, pitch, state.latestLookAt);
+            if (!supported) {
+                state.resetStrictEvidence();
+                return;
+            }
+            if (!wasSupported) {
+                state.resetStrictEvidence();
+            }
+            snapFinding = state.attackRotations.sampleRotation(yaw, pitch, state.latestLookAt);
+            combatFinding = state.combatPatterns.sampleRotation(yaw, pitch, state.latestLookAt);
         }
-        if (finding != null) reportCombatPattern(uuid, state, finding);
+        if (snapFinding != null) reportSnapBack(uuid, state, snapFinding);
+        if (combatFinding != null) reportCombatPattern(uuid, state, combatFinding);
     }
 
     private void reportCombatPattern(UUID uuid, CombatState state, CombatPatternMonitor.Finding finding) {
         String edition = plugin.isBedrockPlayer(uuid) ? "Bedrock" : "Java";
-        String detail = "Paradox " + edition + " combat " + finding.source() + ": " + finding.detail();
-        synchronized (state) {
-            state.aimConfirmedUntil = System.currentTimeMillis() + AIM_WINDOW_MILLIS;
-        }
-        flagLimited(uuid, () -> plugin.flag(uuid, this, detail, finding.metrics(), finding.weight()));
+        reportType(uuid, state, finding.type(), "Paradox " + edition + " " + finding.source(),
+                finding.detail(), finding.metrics(), finding.weight());
+    }
+
+    private void reportSnapBack(UUID uuid, CombatState state, AttackRotationSequence.Finding finding) {
+        String detail = String.format(Locale.ROOT,
+                "attack-only rotation restored within %dms: snap=%.2f restore=%.2f return-error=%.3f reversal=%.4f streak=%d",
+                finding.restoreMillis(), finding.snapDegrees(), finding.restoreDegrees(),
+                finding.returnErrorDegrees(), finding.reversalCosine(), finding.streak());
+        Map<String, Double> metrics = Map.of(
+                "snap_degrees", finding.snapDegrees(),
+                "restore_degrees", finding.restoreDegrees(),
+                "return_error_degrees", finding.returnErrorDegrees(),
+                "reversal_cosine", finding.reversalCosine(),
+                "restore_millis", (double) finding.restoreMillis(),
+                "snap_back_streak", (double) finding.streak());
+        reportType(uuid, state, KillAuraType.C, "attack rotation", detail, metrics, 3);
     }
 
     private void processRotation(UUID uuid, float yaw, float pitch, PacketContext packetContext) {
@@ -141,6 +170,9 @@ public final class KillAuraCheck extends AbstractCheck implements PacketCheck, E
             state.latestPitch = pitch;
             state.latestLookAt = now;
             state.hasLatestLook = Float.isFinite(yaw) && Float.isFinite(pitch);
+            AttackRotationSequence.Finding snapFinding =
+                    state.attackRotations.sampleRotation(yaw, pitch, now);
+            if (snapFinding != null) reportSnapBack(uuid, state, snapFinding);
             CombatPatternMonitor.Finding combatFinding = state.combatPatterns.sampleRotation(yaw, pitch, now);
             if (combatFinding != null) reportCombatPattern(uuid, state, combatFinding);
             MxAimSuite.Result result = state.javaAim.sample(yaw, pitch, now, state.lastAttack,
@@ -150,7 +182,8 @@ public final class KillAuraCheck extends AbstractCheck implements PacketCheck, E
                 List<String> details = result.findings().stream()
                         .map(finding -> finding.source() + "{" + finding.detail() + "}")
                         .distinct().toList();
-                report(uuid, state, packetContext, "MX aim suite", String.join("; ", details));
+                reportType(uuid, state, KillAuraType.E, "MX aim suite",
+                        String.join("; ", details), Map.of(), 2);
             }
         }
     }
