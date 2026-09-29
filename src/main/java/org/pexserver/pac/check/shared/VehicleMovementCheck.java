@@ -6,6 +6,7 @@ import org.bukkit.attribute.Attribute;
 import org.bukkit.entity.Boat;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.LivingEntity;
+import org.bukkit.entity.Minecart;
 import org.bukkit.entity.Player;
 import org.bukkit.craftbukkit.entity.CraftEntity;
 import org.bukkit.craftbukkit.entity.CraftPlayer;
@@ -324,7 +325,7 @@ public final class VehicleMovementCheck extends AbstractCheck implements EventCh
                 targetY, state.livingGravity(), state.livingVerticalDrag(), now);
         if (airFinding.impossible()) {
             flagLimited(uuid, () -> plugin.flag(uuid, this, String.format(java.util.Locale.ROOT,
-                    "living vehicle vertical physics mismatch: type=%s dy=%.3f expected=%.3f residual=%.3f streak=%d",
+                    "gravity-bound vehicle vertical physics mismatch: type=%s dy=%.3f expected=%.3f residual=%.3f streak=%d",
                     state.type(), airFinding.dy(), airFinding.expectedDy(),
                     airFinding.residual(), airFinding.streak())));
             return plugin.cancel(this, uuid);
@@ -402,6 +403,18 @@ public final class VehicleMovementCheck extends AbstractCheck implements EventCh
                     strictLivingAir = serverControlled && living.hasGravity()
                             && !living.isOnGround() && !living.isInWater()
                             && !living.isInLava() && !living.isClimbing();
+                }
+            } else if (vehicle instanceof Minecart minecart) {
+                // Vanilla 26.2 minecarts use 0.04 gravity and multiply
+                // off-rail airborne velocity by the configurable Bukkit flying
+                // modifier (0.95 by default). Respect plugin-modified values.
+                Vector flying = minecart.getFlyingVelocityMod();
+                double dragY = flying == null ? Double.NaN : flying.getY();
+                if (Double.isFinite(dragY) && dragY >= 0.0 && dragY <= 2.0) {
+                    livingGravity = minecart.isInWater() ? 0.005 : 0.04;
+                    livingVerticalDrag = (float) dragY;
+                    strictLivingAir = serverControlled && minecart.hasGravity()
+                            && !minecart.isOnGround() && !minecart.isInWater();
                 }
             }
             packetVehicles.put(uuid, new PacketVehicleSnapshot(
