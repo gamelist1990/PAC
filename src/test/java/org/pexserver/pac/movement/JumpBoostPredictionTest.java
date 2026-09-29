@@ -36,4 +36,12 @@ class JumpBoostPredictionTest {
         assertFalse(sequence.accept(true, false, 0, 64.05, 0, 0,
                 grounded, 1_050).impossibleTakeoff());
     }
+    @Test void terrainJumpFactorScalesBaseJumpBeforeJumpBoost() {
+        assertEquals(0.252f,
+                MotionEnvironment.effectiveJumpStrength(0.42, -1, 0.6f), 1e-6);
+        assertEquals(0.352f,
+                MotionEnvironment.effectiveJumpStrength(0.42, 0, 0.6f), 1e-6);
+    }
+
+
 }
