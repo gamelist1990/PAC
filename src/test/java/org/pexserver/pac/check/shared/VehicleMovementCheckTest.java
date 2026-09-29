@@ -136,6 +136,21 @@ class VehicleMovementCheckTest {
         }
     }
 
+    @Test void constantMinecartGlideViolatesVanillaAirRecurrence() {
+        var window = new VehicleMovementCheck.LivingVehicleAirWindow();
+        var vehicle = java.util.UUID.randomUUID();
+        long now = 4_000;
+        double y = 70.0;
+
+        assertFalse(window.sample(vehicle, true, y, 0.04, 0.95f, now).impossible());
+        for (int tick = 0; tick < 4; tick++) {
+            y -= 0.15;
+            var finding = window.sample(vehicle, true, y, 0.04, 0.95f, now += 50);
+            if (tick < 3) assertFalse(finding.impossible());
+            else assertTrue(finding.impossible());
+        }
+    }
+
     @Test void queuedVehiclePacketResetsVerticalRecurrenceEvidence() {
         var window = new VehicleMovementCheck.LivingVehicleAirWindow();
         var vehicle = java.util.UUID.randomUUID();
