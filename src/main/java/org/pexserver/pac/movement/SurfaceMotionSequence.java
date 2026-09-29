@@ -2,28 +2,37 @@ package org.pexserver.pac.movement;
 
 /** Packet-order state for Java movement next to walls and liquid surfaces. */
 public final class SurfaceMotionSequence {
-    public enum Anomaly { NONE, WALL_CLIMB, WALL_CLIP, LIQUID_GROUND_CLAIM, POWDER_SNOW_WALK, AIR_GROUND_CLAIM }
+    public enum Anomaly { NONE, WALL_CLIMB, WALL_CLIP, CLIMB_SPEED, CLIMB_CLIP, LIQUID_GROUND_CLAIM, POWDER_SNOW_WALK, AIR_GROUND_CLAIM }
     private double x, y, z;
     private boolean initialized;
     private long lastAt;
     private double lastDy;
-    private int wallRise, liquidClaims, powderSnowClaims, airGroundClaims;
+    private int wallRise, climbRise, liquidClaims, powderSnowClaims, airGroundClaims;
 
     public Anomaly accept(boolean hasPosition, double packetX, double packetY, double packetZ,
                           boolean claimedGround, MotionEnvironment.Snapshot environment, long now) {
         return accept(hasPosition, packetX, packetY, packetZ, claimedGround,
-                environment, false, now);
+                environment, false, null, now);
     }
 
     public Anomaly accept(boolean hasPosition, double packetX, double packetY, double packetZ,
                           boolean claimedGround, MotionEnvironment.Snapshot environment,
                           boolean unsupportedPowderSnow, long now) {
+        return accept(hasPosition, packetX, packetY, packetZ, claimedGround,
+                environment, unsupportedPowderSnow, null, now);
+    }
+
+    public Anomaly accept(boolean hasPosition, double packetX, double packetY, double packetZ,
+                          boolean claimedGround, MotionEnvironment.Snapshot environment,
+                          boolean unsupportedPowderSnow, MotionEnvironment.ClimbSnapshot climb,
+                          long now) {
         if (!hasPosition && !initialized) return Anomaly.NONE;
         if (!hasPosition) {
             boolean usable = lastAt > 0 && now - lastAt < 250
                     && environment != null && now - environment.capturedAt() <= 200
                     && environment.near(x, y, z);
             if (!usable || !environment.wallAdjacent()) wallRise = 0;
+            if (climb == null || !climb.climbing() || !climb.near(x, y, z, now)) climbRise = 0;
             liquidClaims = usable && liquidSampleMatches(environment, x, y, z)
                     && environment.waterSurface() && !environment.ordinaryGround() && claimedGround
                     ? liquidClaims + 1 : 0;
@@ -52,7 +61,7 @@ public final class SurfaceMotionSequence {
         if (hasPosition && (!Double.isFinite(packetX) || !Double.isFinite(packetY)
                 || !Double.isFinite(packetZ))) {
             initialized = false;
-            wallRise = liquidClaims = powderSnowClaims = airGroundClaims = 0;
+            wallRise = climbRise = liquidClaims = powderSnowClaims = airGroundClaims = 0;
             lastDy = 0;
             return Anomaly.NONE;
         }
@@ -71,6 +80,12 @@ public final class SurfaceMotionSequence {
         boolean wallClip = previousUsable && environment.wallAdjacent()
                 && environment.levitationAmplifier() < 0
                 && dy > impossibleWallRise;
+        boolean climbUsable = initialized && lastAt > 0 && now - lastAt < 250
+                && climb != null && climb.climbing() && climb.near(x, y, z, now)
+                && (environment == null || environment.levitationAmplifier() < 0);
+        boolean climbClip = climbUsable && dy > 1.0;
+        climbRise = climbUsable && dy > 0.225 && dy <= 0.75
+                ? climbRise + 1 : 0;
         // A wind charge or other vanilla impulse can lift a player alongside
         // a wall. Its rising velocity decays by gravity; Spider's repeated
         // wall climb instead keeps roughly the same upward step.
@@ -93,6 +108,8 @@ public final class SurfaceMotionSequence {
         initialized = true;
         lastAt = now;
         if (wallClip) { wallRise = 0; return Anomaly.WALL_CLIP; }
+        if (climbClip) { climbRise = 0; return Anomaly.CLIMB_CLIP; }
+        if (climbRise >= 3) { climbRise = 0; return Anomaly.CLIMB_SPEED; }
         if (powderSnowClaims >= 4) { powderSnowClaims = 0; return Anomaly.POWDER_SNOW_WALK; }
         if (airGroundClaims >= 4) { airGroundClaims = 0; return Anomaly.AIR_GROUND_CLAIM; }
         if (wallRise >= 8) { wallRise = 0; return Anomaly.WALL_CLIMB; }
