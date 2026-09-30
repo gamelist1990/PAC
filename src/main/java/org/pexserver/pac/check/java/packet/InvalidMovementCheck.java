@@ -18,6 +18,19 @@ public final class InvalidMovementCheck extends AbstractCheck implements PacketC
         }
     }
 
+    public static boolean malformed(com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientPlayerFlying flying) {
+        var location = flying.getLocation();
+        return malformed(flying.hasPositionChanged(), flying.hasRotationChanged(), location.getX(),
+                location.getY(), location.getZ(), location.getYaw(), location.getPitch());
+    }
+    static boolean malformed(boolean position, boolean rotation, double x, double y, double z,
+                             float yaw, float pitch) {
+        return position && invalidCoordinates(x, y, z) || rotation && InvalidPitchCheck.invalidRotation(yaw, pitch);
+    }
+    public void rejectMalformed(org.pexserver.pac.PacPlugin plugin, java.util.UUID uuid) {
+        if (plugin.enabled(uuid, this)) flagLimited(uuid, () -> plugin.flag(uuid, this, "malformed movement rejected before prediction"));
+    }
+
     static boolean invalidCoordinates(double x, double y, double z) {
         return !Double.isFinite(x) || !Double.isFinite(y) || !Double.isFinite(z)
                 || Math.abs(x) > 30_000_000

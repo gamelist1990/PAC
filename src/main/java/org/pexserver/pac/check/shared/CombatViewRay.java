@@ -50,6 +50,53 @@ final class CombatViewRay {
         return far >= 0 && near <= maxDistance ? Math.max(0, near) : Double.NaN;
     }
 
+    /** Exact feasibility of a ray intersecting any linear interpolation of two AABBs.
+     * Clip a convex polygon in (ray distance, interpolation fraction), rather than
+     * expanding to the union box (which invents hittable space on diagonal moves).
+     */
+    static double sweptIntersectionDistance(Vector origin, float yaw, float pitch,
+            BoundingBox from, BoundingBox to, double expansion, double maxDistance) {
+        if (origin == null || from == null || to == null || !Float.isFinite(yaw)
+                || !Float.isFinite(pitch) || !Double.isFinite(maxDistance) || maxDistance < 0)
+            return Double.NaN;
+        Vector direction = direction(yaw, pitch);
+        double[] o = {origin.getX(), origin.getY(), origin.getZ()};
+        double[] d = {direction.getX(), direction.getY(), direction.getZ()};
+        double[] lo = {from.getMinX() - expansion, from.getMinY() - expansion, from.getMinZ() - expansion};
+        double[] hi = {from.getMaxX() + expansion, from.getMaxY() + expansion, from.getMaxZ() + expansion};
+        double[] nextLo = {to.getMinX() - expansion, to.getMinY() - expansion, to.getMinZ() - expansion};
+        double[] nextHi = {to.getMaxX() + expansion, to.getMaxY() + expansion, to.getMaxZ() + expansion};
+        java.util.List<double[]> polygon = new java.util.ArrayList<>(java.util.List.of(
+                new double[] {0, 0}, new double[] {maxDistance, 0},
+                new double[] {maxDistance, 1}, new double[] {0, 1}));
+        for (int axis = 0; axis < 3; axis++) {
+            if (!Double.isFinite(o[axis])) return Double.NaN;
+            polygon = clip(polygon, -d[axis], nextLo[axis] - lo[axis], o[axis] - lo[axis]);
+            polygon = clip(polygon, d[axis], hi[axis] - nextHi[axis], hi[axis] - o[axis]);
+            if (polygon.isEmpty()) return Double.NaN;
+        }
+        return polygon.stream().mapToDouble(p -> p[0]).min().orElse(Double.NaN);
+    }
+
+    private static java.util.List<double[]> clip(java.util.List<double[]> polygon,
+                                                double a, double b, double c) {
+        java.util.List<double[]> result = new java.util.ArrayList<>();
+        if (polygon.isEmpty()) return result;
+        double[] previous = polygon.getLast();
+        double previousValue = a * previous[0] + b * previous[1] - c;
+        for (double[] current : polygon) {
+            double value = a * current[0] + b * current[1] - c;
+            if ((value <= 1.0e-9) != (previousValue <= 1.0e-9)) {
+                double fraction = previousValue / (previousValue - value);
+                result.add(new double[] {previous[0] + fraction * (current[0] - previous[0]),
+                        previous[1] + fraction * (current[1] - previous[1])});
+            }
+            if (value <= 1.0e-9) result.add(current);
+            previous = current; previousValue = value;
+        }
+        return result;
+    }
+
     static Vector direction(float yaw, float pitch) {
         double yawRadians = Math.toRadians(yaw);
         double pitchRadians = Math.toRadians(pitch);

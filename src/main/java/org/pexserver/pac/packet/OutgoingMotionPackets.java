@@ -28,6 +28,7 @@ public final class OutgoingMotionPackets implements PacketListener {
         if (event.isCancelled()) return;
         UUID uuid = event.getUser().getUUID();
         if (uuid == null) return;
+        if (!plugin.isBedrockPlayer(uuid)) plugin.combatScene().outgoing(event);
         if (event.getPacketType() == PacketType.Play.Server.ENTITY_VELOCITY) {
             var velocity = new WrapperPlayServerEntityVelocity(event);
             if (velocity.getEntityId() != event.getUser().getEntityId()) return;

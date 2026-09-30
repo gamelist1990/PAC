@@ -180,6 +180,13 @@ public final class PacketChecks implements PacketListener, Listener {
     @Override public void onPacketReceive(PacketReceiveEvent event) {
         UUID eventUuid = event.getUser().getUUID();
         if (eventUuid != null && !plugin.isBedrockPlayer(eventUuid)
+                && event.getPacketType() == PacketType.Play.Client.PONG
+                && plugin.combatScene().acknowledge(eventUuid,
+                    new com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientPong(event).getId())) {
+            event.setCancelled(true);
+            return;
+        }
+        if (eventUuid != null && !plugin.isBedrockPlayer(eventUuid)
                 && plugin.checks().get("packet-flood") instanceof PacketFloodCheck flood
                 && flood.inspectDecodedPacket(plugin, eventUuid, event, System.nanoTime())) {
             return;
@@ -266,8 +273,22 @@ public final class PacketChecks implements PacketListener, Listener {
         }
         if (!WrapperPlayClientPlayerFlying.isFlying(event.getPacketType())) return;
         UUID uuid = eventUuid;
-        if (uuid == null || plugin.isExempt(uuid)) return;
+        if (uuid == null) return;
         WrapperPlayClientPlayerFlying flying = new WrapperPlayClientPlayerFlying(event);
+        // Malformed coordinates/rotations must never reach predictors, even when a
+        // detector is disabled. Cancellation alone still lets later checks reset
+        // their state or seed it from hostile numbers.
+        if (org.pexserver.pac.check.java.packet.InvalidMovementCheck.malformed(flying)) {
+            event.setCancelled(true);
+            if (plugin.checks().get("invalid-movement") instanceof org.pexserver.pac.check.java.packet.InvalidMovementCheck invalid)
+                invalid.rejectMalformed(plugin, uuid);
+            return;
+        }
+        if (plugin.isExempt(uuid)) return;
+        if (!plugin.isBedrockPlayer(uuid)) {
+            plugin.combatScene().movement(uuid);
+            plugin.combatScene().barrier(event.getUser());
+        }
         if (plugin.checks().get("exploit-actions") instanceof ExploitActionCheck exploitActions
                 && plugin.enabled(uuid, exploitActions)) {
             var movement = flying.getLocation();

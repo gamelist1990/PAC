@@ -120,6 +120,7 @@ public final class PacPlugin extends JavaPlugin implements Listener {
     private NukerCheck nuker;
     private InventoryMoveCheck inventoryMove;
     private ReachCheck reach;
+    public org.pexserver.pac.check.shared.CombatSceneTracker combatScene() { return reach.sceneTracker(); }
     private VehicleMovementCheck vehicleMovement;
     private KillAuraCheck killAura;
     private PacketListenerCommon packetRegistration;
