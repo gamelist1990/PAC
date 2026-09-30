@@ -12,13 +12,13 @@
 |---|---|---|---|
 | 高 | 動く相手へのKillAura/Reachの幾何判定が停止 | 旧 `KillAuraCheck.onDamage` / `ReachCheck.onDamage` は `stableTargetBox` とPing 150ms以下を要求。`stableBox` は約250msの静止を要求 | 現行Javaクライアントでは送信座標とPONG応答に基づく補間候補に置換 |
 | 高 | 通常の被弾・KBが攻撃検査を免除し、証拠もリセット | `recentExternalMotion` によるreturn、`onIncomingDamage` による `resetAnalysis` | KillAura/ReachのKB免除を削除。被弾時は統計的aimの状態だけをリセットし、幾何証拠を保持 |
-| 高 | 全水平KB無視が新しい合法速度として学習される | `GroundMotionSequence.accept` のexternalTransitionは未確認の初回を観測変位でrebase。`externalImpulseMismatch` はfalse。モデル再生で後続offset=0 | 未修正。速度送信の前後を応答で区切り、衝突・ジャンプリセット・攻撃減速を含む複数候補のKB応答検査が必要 |
-| 高 | NoFallのtrue接地フラグを検証しない | Aoba `NoFall.onSendPacket` は座標を変えずonGroundをtrueにする。PACの `GroundClaimSequence` は支持面上のfalse申告だけを扱う | 未修正。落下経路と支持面からtrue接地申告を独立に検証する必要あり |
+| 高 | 全水平KB無視が新しい合法速度として学習される | `GroundMotionSequence.accept` のexternalTransitionは未確認の初回を観測変位でrebase。`externalImpulseMismatch` はfalse。モデル再生で後続offset=0 | 独立したvelocity-responseを追加。実送信と対応PONGに基づき、衝突・ジャンプリセット・攻撃減速の候補を再生。観測変位へのrebaseでKBを消さない |
+| 高 | NoFallのtrue接地フラグを検証しない | Aoba `NoFall.onSendPacket` は座標を変えずonGroundをtrueにする。PACの `GroundClaimSequence` は支持面上のfalse申告だけを扱う | no-fallを追加。新鮮な支持面・移動経路とtrue接地申告を独立に照合し、確定した虚偽ground bitをfalseへ補正 |
 | 中 | NaN/Infinity/範囲外パケットがcancel後も予測器へ入る | `CheckRegistry.dispatch` は全チェックに配送。予測器はcancel済みも処理し、NaNで初期化解除する経路がある | 輸送アダプタで配送前に拒否。速度やtimerでcancelされた有限座標は引き続き処理し、元の連続性対策を保持 |
-| 中 | Criticalsがクライアント固有のsignature中心 | Aobaは小さい3位置パケットを使うが、PACの4パケットsignatureとmini-jump範囲に一致しない。小さい動きはburstのrise条件にも届かない | 静的に検出経路の不足を確認。実サーバーでの攻撃ダメージ成立は未検証。汎用的な接地・上昇・下降履歴による判定が必要 |
+| 中 | Criticalsがクライアント固有のsignature中心 | Aobaは小さい3位置パケットを使うが、PACの4パケットsignatureとmini-jump範囲に一致しない。小さい動きはburstのrise条件にも届かない | 汎用の小さい上昇・下降・帰還履歴を追加。天井とジャンプ強度を検証し、非vanilla軌道直後の攻撃を既存Criticals経路で拒否。実機ダメージ成立は未検証 |
 | 中 | same-tickの複数攻撃だけでmulti-target判定 | 正常パケットが遅延後に同じサーバーtickへ集中し得る | burst単独では判定せず、成立不能な攻撃rayを必要とする。幾何証拠も異なるtickを必要とする |
 
-## モデル再生で確認した残存の穴
+## 修正前のモデル再生で確認した穴
 
 ### 水平AntiKnockback
 
@@ -51,6 +51,17 @@ Paper側の落下ダメージ挙動は別途実機検証が必要。
 11. 対象数1024、位置160/対象、未応答128/観察者を上限とする。履歴欠落・未知のID・UUID再使用は厳格判定の証拠にしない。
 12. Reachは同じ送信候補を使う。距離は各swept unionからの保守的な下限で評価し、過剰なreach拒否を避ける。
 
+## 残存3項目への追加修正
+
+- `velocity-response`: 送信された本人のENTITY_VELOCITY、EXPLOSION、釣り竿ENTITY_STATUS 31を対象にする。釣り竿はBukkitイベントで得たhook ID・対象UUID・impulse sequenceと送信statusを照合する。無関係なstatusをKBの証拠にしない。
+- Java 1.17以降の実送信後にランダムPINGを送る。現在のsequenceに対応するPONGだけで受領を確認し、古い応答は新しい速度を確認しない。5秒/100 physics frameまで応答がなければ、cancel有効時は対応応答まで移動を保留する。応答停止そのものをBAN理由にしない。
+- 受領境界には2 physics frameを残す。入力・物理的な足元支持・摩擦・重力・衝突・ジャンプ・sprint jump・攻撃時減速の合法候補を再生し、境界後に候補が2回連続して消えた場合だけ応答欠落を報告する。直前の観測変位で未適用のserver impulseを置換しない。
+- 加算impulseでは、残っている合法候補に新しいimpulseを加える。未応答の短時間の連続送信は合成前/後の候補も保持する。既に適用されたKBを減衰なしで二重加算しない。
+- 候補512、入力試行4096を上限とし、資源上限・未知のgeometry・entity push・特殊面・濡れ・飛行・タイミング不確定は判定保留とする。テレポート世代変更では座標baselineを破棄し、未知の初回baselineから違反を作らない。検出許容幅内の小さなKB縮小や複雑な特殊環境の確実な検出は保証しない。
+- `no-fall`: 支持のない足元と接触のない移動経路を確認したtrue接地フラグをfalseに書き戻す。3回の連続申告で報告する。正常着地・段差・未知の衝突・テレポートを証拠にしない。
+- `critical-packet`: 小さい上昇から元の高さへ戻る非vanilla軌道を、固定クライアントsignatureに依存せず検証する。通常ジャンプ、低い天井、特殊なジャンプ面、外部KBはこの追加経路の証拠にしない。
+- config-version 18への移行で新規2検出器をenabled/cancel=trueとして追加する。自動BAN/KICK適格性は無効。既存設定の明示値とrecording modeを尊重する。
+
 ## まだ保証できない範囲
 
 - 移動中のJava対象へのray miss / rear attack / Reachは新モデルの対象。Java 1.17未満などPING/PONG非対応の接続は静止boxの保守的fallbackを使う。
@@ -69,14 +80,15 @@ Paper側の落下ダメージ挙動は別途実機検証が必要。
 | Timer | movement timer, decoded packet flood, server tick timing | 対応経路あり。報告Pingだけでphysics tickを追加しない |
 | Noclip / ClickTP / MaceAura | collision/range, rapid position jump, positionless frame制限 | 大きい移動への対応あり。signatureだけで全modeを保証しない |
 | Nuker / FastBreak / Scaffold | digging progress, action windows, place geometry | 対応経路あり。多彩な条件での実機テストが必要 |
-| AntiKnockback / NoFall / Criticals | 上述の不足 | 優先的な追加修正候補 |
+| AntiKnockback / NoFall / Criticals | 新規KB応答・虚偽接地・汎用小ジャンプ軌道 | 再現した穴を追加修正。実機・特殊環境の全mode検出は未保証 |
 | XRay / ESP / Freecamなど視覚情報の変更 | サーバー側情報配信、optional Xray統計 | 正常通信と同一なら運動予測でクライアントの見た目を識別できない |
 
 ## 検証
 
 `bash gradlew test build --no-daemon --console=plain`。
+追加の移動防御ケース: 全KB無視・部分縮小・positionlessのみの応答、応答停止/遅延復帰、正常な摩擦・ジャンプリセット・sprint jump・攻撃減速、壁で停止するKB、加算速度のdrag前後、空中jump申告、未知baseline/teleport、虚偽ground申告、正常着地、通常ジャンプ/低天井、Aoba型および数値を変えた小ジャンプ。
 新規ケース: 移動対象の正当な攻撃/完全背面攻撃、パケット間補間、斜め移動の偽hit空間、ジャンプ・多数の補間率、未知/再送PONG、テレポート、ACK停止と復帰、履歴overflow、遅延burst、pose寸法の保持、NaN/Infinity/範囲外/不正pitch、same-tick証拠の除外。
-最終テスト集計: 558 tests, 0 failures, 0 errors, 0 skipped.
+最終テスト集計: 582 tests, 0 failures, 0 errors, 0 skipped.
 
 実機確認には、通常client/Aobaの両方で、横移動・ジャンプ・被弾・sprint jump reset・複数対象・高RTT・jitter・burst・teleport・pose変更を組み合わせたPvP replayが必要。
 本監査では本番サーバーの設定変更・JAR差し替え・main mergeは実施していない。

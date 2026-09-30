@@ -35,6 +35,7 @@ public final class CriticalPacketCheck extends AbstractCheck implements PacketCh
         long miniJumpAt;
         boolean lastOnGround;
         Step miniJumpStart;
+        final org.pexserver.pac.movement.GroundCriticalWindow genericCritical = new org.pexserver.pac.movement.GroundCriticalWindow();
         final ArrayDeque<Step> recentSteps = new ArrayDeque<>(4);
 
         State(long movementEpoch) { this.movementEpoch = movementEpoch; }
@@ -51,6 +52,7 @@ public final class CriticalPacketCheck extends AbstractCheck implements PacketCh
             miniJumpStart = null;
             lastOnGround = true;
             recentSteps.clear();
+            genericCritical.reset();
         }
     }
 
@@ -86,6 +88,9 @@ public final class CriticalPacketCheck extends AbstractCheck implements PacketCh
             }
             if (!state.initialized) {
                 state.reset(location.getX(), location.getY(), location.getZ(), now);
+                state.genericCritical.accept(location.getX(),location.getY(),location.getZ(),
+                        context.flying().isOnGround(),environment,context.plugin().environment().collisions(context.uuid()),now,
+                        context.timingUncertain());
                 return;
             }
 
@@ -116,6 +121,12 @@ public final class CriticalPacketCheck extends AbstractCheck implements PacketCh
                 return;
             }
 
+            boolean genericSpoof = state.genericCritical.accept(location.getX(),location.getY(),location.getZ(),
+                    context.flying().isOnGround(),environment,context.plugin().environment().collisions(context.uuid()),now,
+                    context.timingUncertain()||context.plugin().environment().movementSuppressed(context.uuid())
+                    ||context.plugin().environment().collisionChangeNear(context.uuid(),state.x,state.y,state.z,
+                        location.getX(),location.getY(),location.getZ(),now));
+            if(genericSpoof) state.miniJumpAt=now;
             Step step = new Step(state.x, state.y, state.z, dx, dy, dz,
                     context.flying().isOnGround(), now);
             if (state.lastOnGround && isMiniJumpTakeoff(step)

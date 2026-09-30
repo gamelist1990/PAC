@@ -28,14 +28,14 @@ class DefaultDetectorPolicyTest {
         var config = YamlConfiguration.loadConfiguration(new InputStreamReader(stream, StandardCharsets.UTF_8));
         ConfigurationSection detectors = config.getConfigurationSection("detectors");
         assertNotNull(detectors);
-        assertEquals(26, detectors.getKeys(false).size());
+        assertEquals(28, detectors.getKeys(false).size());
         assertTrue(detectors.contains("inventory-move"));
         for (String key : detectors.getKeys(false)) {
             assertEquals(!key.equals("xray"),
                     config.getBoolean("detectors." + key + ".enabled"),
                     key + " has an unexpected default state");
             assertEquals(!key.equals("noclip") && !key.equals("vehicle-movement")
-                            && !key.equals("exploit-actions"),
+                            && !key.equals("exploit-actions") && !key.equals("no-fall") && !key.equals("velocity-response"),
                     config.getBoolean("detectors." + key + ".ban-enabled"),
                     key + " has an unexpected BAN default");
         }
@@ -63,7 +63,7 @@ class DefaultDetectorPolicyTest {
 
     @Test void movementRejectionDefaultsOnEvenWhenOlderConfigOmitsCancelOptions() {
         CheckRegistry registry = new CheckRegistry((uuid, module) -> true);
-        for (String key : new String[]{"critical-packet", "inventory-move", "invalid-movement", "invalid-pitch", "packet-flood", "nuker", "anti-hunger",
+        for (String key : new String[]{"critical-packet", "inventory-move", "invalid-movement", "invalid-pitch", "packet-flood", "nuker", "anti-hunger", "no-fall", "velocity-response",
                 "motion-prediction", "air-prediction", "timer-prediction", "surface-prediction",
                 "water-flow-prediction", "water-motion-prediction", "noclip", "vehicle-movement"}) {
             registry.register(new StubPacketCheck(key));

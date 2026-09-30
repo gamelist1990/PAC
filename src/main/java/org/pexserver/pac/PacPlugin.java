@@ -79,7 +79,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public final class PacPlugin extends JavaPlugin implements Listener {
     static final String CONFIG_VERSION_KEY = "config-version";
-    static final int CONFIG_VERSION = 17;
+    static final int CONFIG_VERSION = 18;
     private static final String DEFAULT_BAN_SUFFIX = "&7Support: &bdiscord.gg/xxxx";
     private static final String DEFAULT_KICK_SUFFIX = "";
     private static final long JAVA_CORRECTION_INTERVAL_NANOS = 50_000_000L;
@@ -119,6 +119,8 @@ public final class PacPlugin extends JavaPlugin implements Listener {
     private FastBreakCheck fastBreak;
     private NukerCheck nuker;
     private InventoryMoveCheck inventoryMove;
+    private org.pexserver.pac.check.java.movement.VelocityResponseCheck velocityResponse;
+    public org.pexserver.pac.check.java.movement.VelocityResponseCheck velocityResponse() { return velocityResponse; }
     private ReachCheck reach;
     public org.pexserver.pac.check.shared.CombatSceneTracker combatScene() { return reach.sceneTracker(); }
     private VehicleMovementCheck vehicleMovement;
@@ -139,6 +141,9 @@ public final class PacPlugin extends JavaPlugin implements Listener {
         checks.register(new PacketFloodCheck());
         checks.register(new TimerPredictionCheck());
         checks.register(new AntiHungerCheck());
+        checks.register(new org.pexserver.pac.check.java.movement.NoFallCheck());
+        velocityResponse=new org.pexserver.pac.check.java.movement.VelocityResponseCheck();
+        checks.register(velocityResponse);
         motionPrediction = new MotionPredictionCheck();
         checks.register(motionPrediction);
         airPrediction = new AirPredictionCheck();
@@ -405,6 +410,15 @@ public final class PacPlugin extends JavaPlugin implements Listener {
         }
         if (version < 17) {
             setDefault("detectors.packet-flood.max-decoded-per-second", 1200);
+        }
+        if (version < 18) {
+            for(String key:new String[]{"no-fall","velocity-response"}) {
+                setDefault("detectors."+key+".enabled",true);
+                setDefault("detectors."+key+".cancel",true);
+                setDefault("detectors."+key+".ban-enabled",false);
+                setDefault("detectors."+key+".kick-enabled",false);
+                setDefault("detectors."+key+".alert-score-threshold",1);
+            }
         }
         if (version < CONFIG_VERSION) {
             getConfig().set(CONFIG_VERSION_KEY, CONFIG_VERSION);
