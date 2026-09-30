@@ -12,5 +12,9 @@
             ".continue/**/*.yaml"
         ],
         "https://www.schemastore.org/bukkit-plugin.json": "file:///c%3A/Users/PC_User/IdeaProjects/PAC/src/main/resources/plugin.yml"
-    }
+    },
+    "java.dependency.syncWithFolderExplorer": false,
+    "java.compile.nullAnalysis.mode": "disabled",
+    "java.dependency.packagePresentation": "flat",
+    "java.project.explorer.showNonJavaResources": true
 }
