@@ -83,14 +83,49 @@ class CombatPatternMonitorTest {
         monitor.confirmedHit(1, now + 1);
         monitor.attackPacket(1, now + 2);
 
-        assertNull(monitor.attackPacket(2, now + 20));
-        assertNull(monitor.attackPacket(3, now + 40));
-        CombatPatternMonitor.Finding finding = monitor.attackPacket(4, now + 60);
+        assertNull(monitor.attackPacket(2, now + 30));
+        assertNull(monitor.attackPacket(3, now + 60));
+        CombatPatternMonitor.Finding finding = monitor.attackPacket(4, now + 90);
 
         assertNotNull(finding);
         assertEquals(KillAuraType.D, finding.type());
         assertEquals("rapid-target-switch", finding.source());
         assertEquals(3.0, finding.metrics().get("rapid_switch_streak"));
+    }
+
+    @Test void collapsedAttackArrivalsDoNotProveRapidTargetSwitches() {
+        for (int spacing : new int[]{0, 1}) {
+            var monitor = new CombatPatternMonitor();
+            monitor.confirmedHit(1, 10_000);
+            monitor.confirmedHit(1, 10_001);
+            for (int i = 0; i < 20; i++) {
+                assertNull(monitor.attackPacket(i % 4, 10_010 + i * spacing));
+            }
+        }
+    }
+
+    @Test void bukkitHitCannotSeedARuntimeTargetSwitch() {
+        var monitor = new CombatPatternMonitor();
+        monitor.attackPacket(50, 10_000);
+        // After the packet stream expires, the hit uses a different id namespace.
+        monitor.confirmedHit(1, 14_000);
+        monitor.confirmedHit(1, 14_001);
+        assertNull(monitor.attackPacket(50, 14_030));
+        assertNull(monitor.attackPacket(51, 14_060));
+        assertNull(monitor.attackPacket(52, 14_090));
+    }
+
+    @Test void bedrockAttackAndItsJavaTranslationCountAsOneTarget() {
+        var monitor = new CombatPatternMonitor();
+        monitor.confirmedHit(1, 10_000);
+        monitor.confirmedHit(1, 10_001);
+        for (int i = 0; i < 20; i++) {
+            long now = 10_010 + i * 50L;
+            if (KillAuraCheck.acceptsAttackSource(true, true))
+                assertNull(monitor.attackPacket(50, now));
+            if (KillAuraCheck.acceptsAttackSource(true, false))
+                assertNull(monitor.attackPacket(1, now + 1));
+        }
     }
 
     @Test void yawDeltaWrapsAcrossTheSignedBoundary() {

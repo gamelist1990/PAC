@@ -39,4 +39,12 @@ final class PredictionEvidence {
         return onGround ? Math.max(0.33, movementSpeed * 2.6)
                 : Math.max(0.40, movementSpeed * 3.2);
     }
+
+    static boolean flightMismatch(float predictedY, float actualY,
+                                  float predictedEndVelocityY, float actualEndVelocityY) {
+        // An old position offset with matching vertical physics is not flight.
+        // Flight requires excess height and excess upward/retained vertical motion.
+        return actualY - predictedY >= 0.25F
+                && actualEndVelocityY - predictedEndVelocityY > 0.05F;
+    }
 }

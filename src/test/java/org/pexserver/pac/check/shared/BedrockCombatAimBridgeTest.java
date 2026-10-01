@@ -10,6 +10,13 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class BedrockCombatAimBridgeTest {
+    @Test void eachEditionUsesOnlyOneAttackSource() {
+        assertTrue(KillAuraCheck.acceptsAttackSource(true, true));
+        assertFalse(KillAuraCheck.acceptsAttackSource(true, false));
+        assertTrue(KillAuraCheck.acceptsAttackSource(false, false));
+        assertFalse(KillAuraCheck.acceptsAttackSource(false, true));
+    }
+
     @Test void bedrockBridgeExposesInputModeAndAttackToSharedKillaura() throws Exception {
         assertNotNull(PacPlugin.class.getMethod("acceptBedrockAuthInput", UUID.class, long.class,
                 double.class, double.class, double.class, double.class, double.class, double.class,

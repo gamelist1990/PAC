@@ -6,6 +6,13 @@ import static ac.boar.anticheat.check.impl.prediction.PredictionEvidence.Kind.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 class PredictionEvidenceTest {
+    @Test void loggedPositionOffsetAloneDoesNotEstablishFlight() {
+        assertFalse(PredictionEvidence.flightMismatch(64, 64.41647565F, -0.0784F, -0.0784F));
+        assertFalse(PredictionEvidence.flightMismatch(64.41647565F, 64, 0, -0.0784F));
+        assertTrue(PredictionEvidence.flightMismatch(64, 64.41647565F, -0.16F, 0));
+        assertTrue(PredictionEvidence.flightMismatch(64, 64.41647565F, -0.0784F, 0.42F));
+    }
+
     @Test void unrelatedOffsetsDoNotTurnOneCollisionMismatchIntoPhase() {
         PredictionEvidence evidence = new PredictionEvidence();
         assertTrue(evidence.observe(1, EnumSet.of(Flight)).isEmpty());

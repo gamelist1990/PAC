@@ -19,6 +19,7 @@ public final class PacBridgeHooks {
     public static void install() {
         PacketEvents.getApi().register(new PacketListener() {
             @Override public void onPacketReceived(CloudburstPacketEvent event) {
+                if (event.isCancelled()) return;
                 if (event.getPacket() instanceof InventoryTransactionPacket transaction
                         && transaction.getActionType() == 1
                         && transaction.getTransactionType() == InventoryTransactionType.ITEM_USE_ON_ENTITY) {

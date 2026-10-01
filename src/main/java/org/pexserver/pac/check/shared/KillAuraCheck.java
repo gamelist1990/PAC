@@ -195,6 +195,20 @@ public final class KillAuraCheck extends AbstractCheck implements PacketCheck, E
 
     /** Saves the target id and the last client rotation in packet order. */
     public void onAttackPacket(UUID uuid, int entityId) {
+        processAttackPacket(uuid, entityId, false);
+    }
+
+    /** Runtime entity ids must only be compared with the same Bedrock stream. */
+    public void onBedrockAttackPacket(UUID uuid, int runtimeEntityId) {
+        processAttackPacket(uuid, runtimeEntityId, true);
+    }
+
+    static boolean acceptsAttackSource(boolean bedrockPlayer, boolean bedrockSource) {
+        return bedrockPlayer == bedrockSource;
+    }
+
+    private void processAttackPacket(UUID uuid, int entityId, boolean bedrockSource) {
+        if (!acceptsAttackSource(plugin.isBedrockPlayer(uuid), bedrockSource)) return;
         if (deadPlayers.contains(uuid) || !plugin.enabled(uuid, this) || plugin.isExempt(uuid)) return;
         CombatState state = combat.computeIfAbsent(uuid, ignored -> new CombatState());
         CombatPatternMonitor.Finding finding = null;

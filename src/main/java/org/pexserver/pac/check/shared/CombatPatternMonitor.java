@@ -11,6 +11,7 @@ import java.util.Map;
 final class CombatPatternMonitor {
     private static final long COMBAT_WINDOW_MILLIS = 3_500L;
     private static final long RAPID_SWITCH_MILLIS = 100L;
+    private static final long MIN_SWITCH_SPACING_MILLIS = 20L;
     private static final int ROTATION_WINDOW = 15;
     private static final int ATTACK_WINDOW = 20;
     private static final double SMOOTH_RELATIVE_VARIANCE = 0.0005;
@@ -89,7 +90,8 @@ final class CombatPatternMonitor {
 
         long switchInterval = lastPacketTargetAt == 0L ? Long.MAX_VALUE : now - lastPacketTargetAt;
         if (targetEntityId != lastPacketTarget) {
-            if (lastPacketTarget != Integer.MIN_VALUE && switchInterval >= 0L
+            // Collapsed arrivals measure transport scheduling, not client actions.
+            if (lastPacketTarget != Integer.MIN_VALUE && switchInterval >= MIN_SWITCH_SPACING_MILLIS
                     && switchInterval < RAPID_SWITCH_MILLIS) {
                 rapidSwitchStreak++;
             } else {
@@ -120,9 +122,8 @@ final class CombatPatternMonitor {
         hitTimes.addLast(now);
         while (hitTimes.size() > ATTACK_WINDOW) hitTimes.removeFirst();
         lastAttackAt = now;
-        // Bukkit's actual hit is authoritative if a bridge's attack packet did
-        // not reach PacketEvents in time. Keep target-switch state packet-based.
-        if (lastPacketTarget == Integer.MIN_VALUE) lastPacketTarget = targetEntityId;
+        // A Bukkit hit has a Java id; Bedrock attack packets have runtime ids.
+        // Hits corroborate combat without seeding the packet target namespace.
     }
 
     synchronized void reset() {

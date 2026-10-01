@@ -168,7 +168,8 @@ public class Prediction extends BaseCheck implements OffsetHandlerCheck {
             details.put(Kind.Speed, "o: " + offset + ", expected: " + squaredPredicted + ", actual: " + squaredActual);
         }
 
-        if (Math.abs(player.position.y - player.unvalidatedPosition.y) >= 0.25F) {
+        if (PredictionEvidence.flightMismatch(player.position.y, player.unvalidatedPosition.y,
+                player.velocity.y, player.unvalidatedTickEnd.y)) {
             suspicious.add(Kind.Flight);
         }
 
@@ -185,6 +186,7 @@ public class Prediction extends BaseCheck implements OffsetHandlerCheck {
         Boar.debug("[movement-debug] confirmed prediction tick=" + player.tick
                 + " offset=" + offset + " kinds=" + confirmed
                 + " predictedPos=" + player.position + " actualPos=" + player.unvalidatedPosition
+                + " positionDelta=" + actual + " predictedMovement=" + player.afterCollision
                 + " predictedDelta=" + player.velocity + " actualDelta=" + player.unvalidatedTickEnd,
                 Boar.DebugMessage.WARNING);
         rewind();

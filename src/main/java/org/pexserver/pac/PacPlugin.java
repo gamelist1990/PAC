@@ -578,7 +578,7 @@ public final class PacPlugin extends JavaPlugin implements Listener {
         if (!acceptingBedrockInput || uuid == null) return false;
         bridgeObservedPlayers.add(uuid);
         KillAuraCheck currentKillAura = killAura;
-        if (currentKillAura != null) currentKillAura.onAttackPacket(uuid, entityId);
+        if (currentKillAura != null) currentKillAura.onBedrockAttackPacket(uuid, entityId);
         return true;
     }
     /** Receives physics violations from the bundled Geyser engine. */

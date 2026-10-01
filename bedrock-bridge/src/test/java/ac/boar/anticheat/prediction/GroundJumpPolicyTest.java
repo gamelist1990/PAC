@@ -4,6 +4,12 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class GroundJumpPolicyTest {
+    @Test void staleGroundFlagCanRecoverOnlyFromVerifiedNearbySupport() {
+        assertTrue(GroundJumpPolicy.shouldRecoverSupport(-0.0784F, 0));
+        assertFalse(GroundJumpPolicy.shouldRecoverSupport(-0.0784F, -0.001F));
+        assertFalse(GroundJumpPolicy.shouldRecoverSupport(0.3332F, 0));
+    }
+
     @Test void heldJumpCanLaunchAgainAfterLanding() {
         assertTrue(GroundJumpPolicy.shouldJump(true, true, true));
         for (int tick = 0; tick < 10; tick++) {

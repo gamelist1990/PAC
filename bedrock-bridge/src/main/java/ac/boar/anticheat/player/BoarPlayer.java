@@ -5,6 +5,7 @@ import ac.boar.anticheat.ack.Acknowledgment;
 import ac.boar.anticheat.ack.BoarAcknowledgmentTransport;
 import ac.boar.anticheat.ack.BoarBatchedAcknowledgmentTransport;
 import ac.boar.anticheat.check.api.holder.CheckHolder;
+import ac.boar.anticheat.collision.Collider;
 import ac.boar.anticheat.collision.util.CuboidBlockIterator;
 import ac.boar.anticheat.compensated.CompensatedInventory;
 import ac.boar.anticheat.compensated.cache.entity.EntityCache;
@@ -397,9 +398,17 @@ public final class BoarPlayer extends PlayerData {
         boolean canJumpInWater = this.getFluidHeight(Fluid.WATER) != 0, canJumpInLava = this.isInLava();
         if ((jumping || autoJumping) && (canJumpInWater || canJumpInLava)) {
             vec3 = vec3.add(0, 0.04F, 0);
-        } else if (GroundJumpPolicy.shouldJump(this.onGround,
-                this.getInputData().contains(PlayerAuthInputData.START_JUMPING), jumping)) {
-            vec3 = this.jumpFromGround(vec3);
+        } else {
+            boolean started = this.getInputData().contains(PlayerAuthInputData.START_JUMPING);
+            if (!this.onGround && (started || jumping) && vec3.y <= 0) {
+                // Reanchoring a position can reach the floor before the simulated
+                // ground flag. Verify support in the world before accepting a jump.
+                float clippedY = Collider.collide(this, new Vec3(0, -1.0E-3F, 0)).y;
+                if (GroundJumpPolicy.shouldRecoverSupport(vec3.y, clippedY)) this.onGround = true;
+            }
+            if (GroundJumpPolicy.shouldJump(this.onGround, started, jumping)) {
+                vec3 = this.jumpFromGround(vec3);
+            }
         }
 
         return vec3;
