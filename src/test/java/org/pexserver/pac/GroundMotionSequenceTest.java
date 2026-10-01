@@ -15,6 +15,60 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class GroundMotionSequenceTest {
+    @Test void repeatedSprintJumpsUpStairsDoNotBecomeImpossibleTakeoffsOrWallClimbs() {
+        var sequence = new GroundMotionSequence();
+        var surface = new org.pexserver.pac.movement.SurfaceMotionSequence();
+        var shapes = new java.util.ArrayList<MotionCollisionSnapshot.Box>();
+        shapes.add(new MotionCollisionSnapshot.Box(-4, 63, -2, 0, 64, 2));
+        for (int i = 0; i < 16; i++) {
+            shapes.add(new MotionCollisionSnapshot.Box(i * 0.5, 63, -2,
+                    (i + 1) * 0.5, 64 + (i + 1) * 0.5, 2));
+        }
+        double x = -0.6, y = 64, vx = 0, vy = -0.0784;
+        boolean grounded = true;
+        int jumps = 0;
+        for (int tick = 0; tick < 100 && x < 5; tick++) {
+            long now = 1_000 + tick * 50L;
+            var environment = new MotionEnvironment.Snapshot(grounded, false, false, false, false,
+                    0, 0.13, x, y, 0, tick, now, true, false).withSprinting(true, 0.13);
+            var collisions = new MotionCollisionSnapshot(-4, 62, -2, 10, 80, 2,
+                    0.6, 1.8, 0.6, 0.6, shapes, true, now);
+            if (tick == 0) {
+                sequence.accept(true, true, x, y, 0, -90, environment, now,
+                        null, null, collisions);
+                surface.accept(true, x, y, 0, true, environment, now);
+            }
+            if (grounded) {
+                vy = 0.42F;
+                vx += 0.2F;
+                jumps++;
+            }
+            vx += grounded ? 0.13F * 0.98F : 0.026F * 0.98F;
+            var moves = collisions.resolve(x, y, 0, vx, vy, 0, grounded);
+            var move = moves.stream().max(java.util.Comparator.comparingDouble(
+                    candidate -> candidate.x() * candidate.x() + candidate.z() * candidate.z())).orElseThrow();
+            var sample = sequence.accept(true, false, x + move.x(), y + move.y(), 0, -90,
+                    environment, now + 1, null, null, collisions);
+            assertFalse(sample.impossibleTakeoff(), "stair jump tick=" + tick);
+            if (sample.evaluated()) {
+                assertEquals(0, sample.offset(), 0.06, "stair prediction tick=" + tick);
+                assertEquals(0, sample.speedExcess(), 0.06, "stair speed tick=" + tick);
+            }
+            assertEquals(org.pexserver.pac.movement.SurfaceMotionSequence.Anomaly.NONE,
+                    surface.accept(true, x + move.x(), y + move.y(), 0, grounded,
+                            environment, now + 1), "stair surface tick=" + tick);
+            grounded = vy < 0 && Math.abs(move.y() - vy) > 1.0E-6;
+            if (Math.abs(move.x() - vx) > 1.0E-6) vx = 0;
+            if (Math.abs(move.y() - vy) > 1.0E-6) vy = 0;
+            x += move.x();
+            y += move.y();
+            vx *= grounded ? 0.546F : 0.91F;
+            vy = (vy - 0.08) * 0.98;
+        }
+        assertTrue(jumps >= 3, "the trace must include repeated landings and renewed jumps");
+        assertTrue(y >= 66, "the trace must actually climb multiple stairs");
+    }
+
     @Test void iceHeadBonkSprintImpulseIsIncludedInGroundSpeedPrediction() {
         var sequence = new GroundMotionSequence();
         var ceiling = new MotionCollisionSnapshot(-2, 62, -2, 6, 68, 2,

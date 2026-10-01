@@ -6,6 +6,7 @@ import ac.boar.anticheat.ack.BoarAcknowledgmentTransport;
 import ac.boar.anticheat.ack.BoarBatchedAcknowledgmentTransport;
 import ac.boar.anticheat.check.api.holder.CheckHolder;
 import ac.boar.anticheat.collision.Collider;
+import ac.boar.anticheat.collision.PartialHeightCollision;
 import ac.boar.anticheat.collision.util.CuboidBlockIterator;
 import ac.boar.anticheat.compensated.CompensatedInventory;
 import ac.boar.anticheat.compensated.cache.entity.EntityCache;
@@ -607,13 +608,7 @@ public final class BoarPlayer extends PlayerData {
                             this, Vector3i.from(x, y, z), stepArea, false);
 
                     for (Box collision : collisions) {
-                        float height = collision.maxY - collision.minY;
-                        if (height <= Box.EPSILON || height >= 1.0F - Box.EPSILON) {
-                            continue;
-                        }
-
-                        Box worldCollision = collision.offset(x, y, z);
-                        if (worldCollision.expand(0.05F).intersects(stepArea)) {
+                        if (PartialHeightCollision.near(collision, stepArea)) {
                             return true;
                         }
                     }

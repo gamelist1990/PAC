@@ -47,4 +47,12 @@ final class PredictionEvidence {
         return actualY - predictedY >= 0.25F
                 && actualEndVelocityY - predictedEndVelocityY > 0.05F;
     }
+
+    static boolean phaseMismatch(boolean predictedHorizontal, boolean predictedVertical,
+                                 boolean claimedHorizontal, boolean claimedVertical) {
+        // Additional client contacts on a step/landing do not indicate passing
+        // through a surface. Only missing predicted contacts can support Phase.
+        return predictedHorizontal && !claimedHorizontal
+                || predictedVertical && !claimedVertical;
+    }
 }

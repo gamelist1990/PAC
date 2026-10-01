@@ -123,8 +123,8 @@ public class Prediction extends BaseCheck implements OffsetHandlerCheck {
         boolean claimedHorizontal = player.getInputData().contains(PlayerAuthInputData.HORIZONTAL_COLLISION);
         boolean claimedVertical = player.getInputData().contains(PlayerAuthInputData.VERTICAL_COLLISION);
         if (offset >= 0.25F
-            && (claimedVertical != player.verticalCollision
-            || claimedHorizontal != player.horizontalCollision)) {
+            && PredictionEvidence.phaseMismatch(player.horizontalCollision, player.verticalCollision,
+                claimedHorizontal, claimedVertical)) {
             suspicious.add(Kind.Phase);
             details.put(Kind.Phase, "o: " + offset + ", expect: (" + player.horizontalCollision + "," + player.verticalCollision + "), actual: (" + claimedHorizontal + "," + claimedVertical + ")");
         }
