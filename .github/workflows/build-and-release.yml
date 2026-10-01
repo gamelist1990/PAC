@@ -60,15 +60,17 @@ jobs:
           chmod +x gradlew
           ./gradlew build
 
-      - name: Select the distributable JAR
+      - name: Select the release assets
         id: package
         shell: bash
         run: |
           set -euo pipefail
           VERSION=$(sed -n 's/^version=//p' gradle.properties | head -1)
-          PACKAGE="build/libs/PAC-$VERSION.jar"
+          PACKAGE="build/distributions/release/PAC-$VERSION.jar"
           test -s "$PACKAGE"
-          echo "path=$PACKAGE" >> "$GITHUB_OUTPUT"
+          test -s "build/distributions/release/PAC-$VERSION-plain.jar"
+          test -s "build/distributions/release/PAC-plain.jar"
+          echo "path=build/distributions/release/*.jar" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Upload build artifact
@@ -101,6 +103,9 @@ jobs:
 
             `PAC-${{ steps.release.outputs.version }}.jar` をダウンロードし、サーバーの `plugins/` に配置してください。
             PacketEvents 2.14.0 が必要です。Bedrock対応にはGeyser-Spigotも必要です。
+
+            プラグイン開発時のcompileOnly依存には `PAC-${{ steps.release.outputs.version }}-plain.jar` を使用してください。
+            最新版の固定ダウンロードURL: https://github.com/gamelist1990/PAC/releases/latest/download/PAC-plain.jar
           files: ${{ steps.package.outputs.path }}
           fail_on_unmatched_files: true
           generate_release_notes: true

@@ -71,7 +71,16 @@ tasks.register('packagePac', Jar) {
     }
 }
 
-tasks.build { dependsOn tasks.packagePac }
+tasks.register('prepareReleaseArtifacts', Sync) {
+    description = 'Prepares the plugin and compile-only plain JAR assets for GitHub Releases.'
+    dependsOn tasks.packagePac, tasks.jar
+    into layout.buildDirectory.dir('distributions/release')
+    from(tasks.packagePac)
+    from(tasks.jar)
+    from(tasks.jar) { rename { 'PAC-plain.jar' } }
+}
+
+tasks.build { dependsOn tasks.prepareReleaseArtifacts }
 tasks.test { useJUnitPlatform() }
 
 tasks.register('bundleBedrock', Zip) {

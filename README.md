@@ -53,7 +53,9 @@ Bedrock拡張の確認方法は[導入ガイド](bedrock-bridge/INSTALL.md)を�
 
 ## 開発・ビルド
 
-Windowsでは `gradlew.bat build`、Linux/macOSでは `./gradlew build` を実行します。配布用ファイルは `build/libs/PAC-<バージョン>.jar` です。`-plain.jar` と `-shaded.jar` は配布用ではありません。
+Windowsでは `gradlew.bat build`、Linux/macOSでは `./gradlew build` を実行します。サーバーへの導入用ファイルは `build/libs/PAC-<バージョン>.jar` です。
+
+他のプラグインの開発では、Releasesの `PAC-<バージョン>-plain.jar` を `compileOnly` 依存として使用できます。最新版は[固定ダウンロードURL](https://github.com/gamelist1990/PAC/releases/latest/download/PAC-plain.jar)から取得できます。plain JARはサーバーへの導入には使用しません。Release用の3ファイルは `build/distributions/release/` に出力されます。
 
 GitHubへのpushでビルドを実行します。`main` にpushされたコミット数に応じてパッチ版数を進め、テスト成功後に配布用JARをGitHub Releasesへ公開します。対応Minecraft版は `src/main/resources/plugin.yml` の `api-version` から読み取り、READMEへ反映します。Releasesの累計ダウンロード数も公開後に表示します。
 
