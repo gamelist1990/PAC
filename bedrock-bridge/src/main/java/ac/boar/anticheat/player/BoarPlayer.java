@@ -21,6 +21,7 @@ import ac.boar.anticheat.player.accessor.InventoryAccessor;
 import ac.boar.anticheat.player.accessor.WorldAccessor;
 import ac.boar.anticheat.player.data.BlockMappingInfo;
 import ac.boar.anticheat.player.data.PlayerData;
+import ac.boar.anticheat.prediction.GroundJumpPolicy;
 import ac.boar.anticheat.teleport.TeleportUtil;
 import ac.boar.anticheat.util.LatencyUtil;
 import ac.boar.anticheat.util.MathUtil;
@@ -396,7 +397,8 @@ public final class BoarPlayer extends PlayerData {
         boolean canJumpInWater = this.getFluidHeight(Fluid.WATER) != 0, canJumpInLava = this.isInLava();
         if ((jumping || autoJumping) && (canJumpInWater || canJumpInLava)) {
             vec3 = vec3.add(0, 0.04F, 0);
-        } else if (this.onGround && this.getInputData().contains(PlayerAuthInputData.START_JUMPING)) {
+        } else if (GroundJumpPolicy.shouldJump(this.onGround,
+                this.getInputData().contains(PlayerAuthInputData.START_JUMPING), jumping)) {
             vec3 = this.jumpFromGround(vec3);
         }
 

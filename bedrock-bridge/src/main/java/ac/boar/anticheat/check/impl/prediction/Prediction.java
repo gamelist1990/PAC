@@ -13,6 +13,8 @@ import org.cloudburstmc.protocol.bedrock.data.PlayerAuthInputData;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.EnumSet;
+import ac.boar.anticheat.check.impl.prediction.PredictionEvidence.Kind;
 
 @CheckInfo(name = "Prediction")
 public class Prediction extends BaseCheck implements OffsetHandlerCheck {
@@ -23,8 +25,7 @@ public class Prediction extends BaseCheck implements OffsetHandlerCheck {
     private static final float SPEED_EXCESS_SQUARED = 0.01F;
 
     private final Map<String, Check> checks = new HashMap<>();
-    private int suspiciousTicks;
-    private long lastSuspiciousTick = Long.MIN_VALUE;
+    private final PredictionEvidence evidence = new PredictionEvidence();
 
     public Prediction(BoarPlayer player) {
         super(player);
@@ -111,49 +112,31 @@ public class Prediction extends BaseCheck implements OffsetHandlerCheck {
             return;
         }
 
-        // Evidence must describe consecutive client ticks. Isolated prediction
-        // misses during a turn or after a delayed packet are not movement hacks.
-        suspiciousTicks = player.tick == lastSuspiciousTick + 1 ? suspiciousTicks + 1 : 1;
-        lastSuspiciousTick = player.tick;
-        if (suspiciousTicks < 3) {
-            return;
-        }
-        suspiciousTicks = 0;
-
-        Boar.debug("[movement-debug] prediction offset tick=" + player.tick + " offset=" + offset + " max=" + player.getMaxOffset() + " alert=" + Boar.getConfig().alertThreshold() + " type=" + player.bestPossibility.getType() + " predictedPos=" + player.position + " actualPos=" + player.unvalidatedPosition + " predictedDelta=" + player.velocity + " actualDelta=" + player.unvalidatedTickEnd, Boar.DebugMessage.WARNING);
-
-        float actionableThreshold = Math.max(
-            Boar.getConfig().alertThreshold(), MINIMUM_ACTIONABLE_OFFSET);
         if (!shouldDoFail()) {
             resetEvidence();
             return;
         }
-        if (offset < actionableThreshold) {
-            Boar.debug("[movement-debug] rewind reason=prediction-soft tick=" + player.tick + " offset=" + offset, Boar.DebugMessage.WARNING);
-            rewind();
-            return;
-        }
 
-        Boar.debug("[movement-debug] rewind reason=prediction-fail tick=" + player.tick + " offset=" + offset, Boar.DebugMessage.WARNING);
-        rewind();
+        EnumSet<Kind> suspicious = EnumSet.noneOf(Kind.class);
+        Map<Kind, String> details = new HashMap<>();
 
         boolean claimedHorizontal = player.getInputData().contains(PlayerAuthInputData.HORIZONTAL_COLLISION);
         boolean claimedVertical = player.getInputData().contains(PlayerAuthInputData.VERTICAL_COLLISION);
         if (offset >= 0.25F
             && (claimedVertical != player.verticalCollision
             || claimedHorizontal != player.horizontalCollision)) {
-            fail("Phase", "o: " + offset + ", expect: (" + player.horizontalCollision + "," + player.verticalCollision + "), actual: (" + claimedHorizontal + "," + claimedVertical + ")");
+            suspicious.add(Kind.Phase);
+            details.put(Kind.Phase, "o: " + offset + ", expect: (" + player.horizontalCollision + "," + player.verticalCollision + "), actual: (" + claimedHorizontal + "," + claimedVertical + ")");
         }
 
         if (player.bestPossibility.getType() == VectorType.VELOCITY) {
-            fail("Velocity", "o: " + offset);
-            return;
+            suspicious.add(Kind.Velocity);
         }
 
         if (offset >= 0.25F
                 && player.unvalidatedTickEnd.distanceTo(player.velocity)
                 < player.getMaxOffset()) {
-            fail("Collisions", "o: " + offset);
+            suspicious.add(Kind.Collisions);
         }
 
         Vec3 actual = player.unvalidatedPosition.subtract(player.prevUnvalidatedPosition);
@@ -163,7 +146,8 @@ public class Prediction extends BaseCheck implements OffsetHandlerCheck {
         if (squaredActual >= DIRECTION_MOVEMENT_SQUARED
                 && squaredPredicted >= DIRECTION_MOVEMENT_SQUARED
                 && opposingHorizontalMotion(actual, predicted)) {
-            fail("Strafe", "o: " + offset + ", expected direction: " + MathUtil.signAll(predicted).horizontalToString() + ", actual direction: " + MathUtil.signAll(actual).horizontalToString());
+            suspicious.add(Kind.Strafe);
+            details.put(Kind.Strafe, "o: " + offset + ", expected direction: " + MathUtil.signAll(predicted).horizontalToString() + ", actual direction: " + MathUtil.signAll(actual).horizontalToString());
         }
 
         // Water-to-land acceleration is applied at different points by
@@ -177,20 +161,42 @@ public class Prediction extends BaseCheck implements OffsetHandlerCheck {
         // A speed classification needs both a prediction error and movement
         // outside a conservative vanilla ground envelope. A stale sprint flag
         // can underpredict an otherwise ordinary ~0.27 block/tick walk.
-        double groundEnvelope = Math.max(0.33, player.getSpeed() * 2.6);
+        double groundEnvelope = PredictionEvidence.speedEnvelope(player.getSpeed(), player.onGround);
         if (squaredActual - squaredPredicted > speedExcessThreshold
                 && squaredActual > groundEnvelope * groundEnvelope) {
-            fail("Speed", "o: " + offset + ", expected: " + squaredPredicted + ", actual: " + squaredActual);
+            suspicious.add(Kind.Speed);
+            details.put(Kind.Speed, "o: " + offset + ", expected: " + squaredPredicted + ", actual: " + squaredActual);
         }
 
         if (Math.abs(player.position.y - player.unvalidatedPosition.y) >= 0.25F) {
-            fail("Flight", "o: " + offset);
+            suspicious.add(Kind.Flight);
+        }
+
+        if (player.bestPossibility.getType() == VectorType.VELOCITY) {
+            // Knockback has its own classification; do not also call it speed/flight.
+            suspicious.retainAll(EnumSet.of(Kind.Phase, Kind.Velocity));
+        }
+        suspicious.removeIf(kind -> Boar.getConfig().disabledChecks().contains(kind.name()));
+        EnumSet<Kind> confirmed = evidence.observe(player.tick, suspicious);
+        if (confirmed.isEmpty()) return;
+
+        float actionableThreshold = Math.max(
+                Boar.getConfig().alertThreshold(), MINIMUM_ACTIONABLE_OFFSET);
+        Boar.debug("[movement-debug] confirmed prediction tick=" + player.tick
+                + " offset=" + offset + " kinds=" + confirmed
+                + " predictedPos=" + player.position + " actualPos=" + player.unvalidatedPosition
+                + " predictedDelta=" + player.velocity + " actualDelta=" + player.unvalidatedTickEnd,
+                Boar.DebugMessage.WARNING);
+        rewind();
+        if (offset >= actionableThreshold) {
+            for (Kind kind : confirmed) {
+                fail(kind.name(), details.getOrDefault(kind, "o: " + offset));
+            }
         }
     }
 
     private void resetEvidence() {
-        suspiciousTicks = 0;
-        lastSuspiciousTick = Long.MIN_VALUE;
+        evidence.reset();
     }
 
     /** A minor sign change in one component is common during legitimate turns. */
