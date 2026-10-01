@@ -1,6 +1,7 @@
 package ac.boar.anticheat.packets.input.legacy;
 
 import ac.boar.anticheat.check.api.Check;
+import org.pexserver.pac.bridge.PacPaperBridge;
 import ac.boar.anticheat.check.api.impl.OffsetHandlerCheck;
 import ac.boar.anticheat.collision.Collider;
 import ac.boar.anticheat.compensated.cache.container.ContainerCache;
@@ -55,7 +56,10 @@ public class LegacyAuthInputPackets {
         }
         correctInputData(player, packet);
 
-        if (offset < player.getMaxOffset()) {
+        // Observation mode still evaluates this tick against simulated motion,
+        // then anchors the next tick to the actual position to avoid drift.
+        if (offset < player.getMaxOffset()
+                || !PacPaperBridge.isRollbackEnabled(player.getSession().uuid())) {
             player.setPos(player.unvalidatedPosition.clone(), false);
         }
 
@@ -63,7 +67,9 @@ public class LegacyAuthInputPackets {
     }
 
     public static void correctInputData(final BoarPlayer player, final PlayerAuthInputPacket packet) {
-        if (player.isMovementExempted()) {
+        if (player.isMovementExempted() || player.isDynamicMovementExempt()
+                || player.predictionResync
+                || !PacPaperBridge.isRollbackEnabled(player.getSession().uuid())) {
             return;
         }
 

@@ -15,6 +15,7 @@ public final class PacPaperBridge {
     private static volatile Method exemptionReader;
     private static volatile Method recordingOnlyReader;
     private static volatile Method rollbackEnabledReader;
+    private static volatile Method bedrockRollbackReader;
     private static volatile Method diagnosticReceiver;
     private static volatile Method disconnectReceiver;
     private static volatile Method attackReceiver;
@@ -127,7 +128,7 @@ public final class PacPaperBridge {
     public static boolean isRollbackEnabled() {
         try {
             Object plugin = plugin();
-            if (plugin == null) return true;
+            if (plugin == null) return false;
             Method reader = rollbackEnabledReader;
             if (reader == null) {
                 reader = plugin.getClass().getMethod("rollbackEnabled");
@@ -136,7 +137,25 @@ public final class PacPaperBridge {
             return Boolean.TRUE.equals(reader.invoke(plugin));
         } catch (ReflectiveOperationException | LinkageError ignored) {
             reset();
-            return true;
+            return false;
+        }
+    }
+
+    /** Read policy on each action; cache the reflection method, never its result. */
+    public static boolean isRollbackEnabled(UUID uuid) {
+        if (uuid == null) return false;
+        try {
+            Object plugin = plugin();
+            if (plugin == null) return false;
+            Method reader = bedrockRollbackReader;
+            if (reader == null) {
+                reader = plugin.getClass().getMethod("bedrockRollbackEnabled", UUID.class);
+                bedrockRollbackReader = reader;
+            }
+            return Boolean.TRUE.equals(reader.invoke(plugin, uuid));
+        } catch (ReflectiveOperationException | LinkageError ignored) {
+            reset();
+            return false;
         }
     }
 
@@ -193,6 +212,7 @@ public final class PacPaperBridge {
         exemptionReader = null;
         recordingOnlyReader = null;
         rollbackEnabledReader = null;
+        bedrockRollbackReader = null;
         diagnosticReceiver = null;
         disconnectReceiver = null;
         attackReceiver = null;

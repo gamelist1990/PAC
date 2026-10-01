@@ -25,8 +25,6 @@ public class Prediction extends BaseCheck implements OffsetHandlerCheck {
     private final Map<String, Check> checks = new HashMap<>();
     private int suspiciousTicks;
     private long lastSuspiciousTick = Long.MIN_VALUE;
-    private long lastPredictionAt;
-    private int settlingTicks;
 
     public Prediction(BoarPlayer player) {
         super(player);
@@ -43,22 +41,20 @@ public class Prediction extends BaseCheck implements OffsetHandlerCheck {
 
     @Override
     public void onPredictionComplete(float offset) {
-        long now = System.currentTimeMillis();
-        if (lastPredictionAt != 0 && now - lastPredictionAt > 125) {
-            // A delayed AuthInput packet can be followed by a burst of stale
-            // positions. Let the prediction anchor resynchronize first.
-            settlingTicks = 2;
-            resetEvidence();
-        }
-        lastPredictionAt = now;
-        if (settlingTicks > 0) {
-            settlingTicks--;
+        // Continuous client ticks remain valid during high ping and lag bursts.
+        // Only missing inputs require the physics anchor to resynchronize.
+        if (player.predictionResync) {
             resetEvidence();
             return;
         }
         if (player.tick < JOIN_GRACE_TICKS
                 || player.sinceLoadingScreen < JOIN_GRACE_TICKS
                 || offset < Math.max(player.getMaxOffset(), MINIMUM_ACTIONABLE_OFFSET)) {
+            resetEvidence();
+            return;
+        }
+
+        if (player.isDynamicMovementExempt()) {
             resetEvidence();
             return;
         }
@@ -128,7 +124,11 @@ public class Prediction extends BaseCheck implements OffsetHandlerCheck {
 
         float actionableThreshold = Math.max(
             Boar.getConfig().alertThreshold(), MINIMUM_ACTIONABLE_OFFSET);
-        if (!shouldDoFail() || offset < actionableThreshold) {
+        if (!shouldDoFail()) {
+            resetEvidence();
+            return;
+        }
+        if (offset < actionableThreshold) {
             Boar.debug("[movement-debug] rewind reason=prediction-soft tick=" + player.tick + " offset=" + offset, Boar.DebugMessage.WARNING);
             rewind();
             return;

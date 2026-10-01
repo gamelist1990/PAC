@@ -597,6 +597,13 @@ public final class PacPlugin extends JavaPlugin implements Listener {
         CheckModule prediction = checks.get("bedrock-prediction");
         return !acceptingBedrockInput || isExempt(uuid) || prediction == null || !enabled(uuid, prediction);
     }
+    /** Live enforcement policy for the Geyser packet thread, including world overrides. */
+    public boolean bedrockRollbackEnabled(UUID uuid) {
+        CheckModule prediction = checks.get("bedrock-prediction");
+        return uuid != null && acceptingBedrockInput && !isDebugRecording()
+                && prediction != null && enabled(uuid, prediction)
+                && !isExempt(uuid, prediction) && cancel(prediction, uuid);
+    }
     public boolean enabled(CheckModule module) { return checkSettings.enabled(module); }
     public void setEnabled(CheckModule module, boolean value) { checkSettings.setEnabled(module, value); getConfig().set("detectors." + module.key() + ".enabled", value); saveConfig(); }
     public boolean enabled(UUID playerId, CheckModule module) {

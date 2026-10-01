@@ -8,6 +8,7 @@ import ac.boar.anticheat.packets.input.legacy.LegacyAuthInputPackets;
 import ac.boar.anticheat.packets.input.teleport.TeleportHandler;
 import ac.boar.anticheat.player.BoarPlayer;
 import ac.boar.anticheat.prediction.PredictionRunner;
+import ac.boar.anticheat.prediction.PredictionTickWindow;
 import ac.boar.anticheat.teleport.data.RewindData;
 import ac.boar.anticheat.teleport.data.TeleportData;
 import ac.boar.anticheat.util.Dimension;
@@ -50,6 +51,12 @@ public class AuthInputPackets extends TeleportHandler implements PacketListener 
             return;
         }
 
+        PredictionTickWindow.Step step = player.predictionTicks.observe(claimedTick);
+        if (step == PredictionTickWindow.Step.STALE) {
+            event.setCancelled(true);
+            return;
+        }
+        player.predictionResync = step == PredictionTickWindow.Step.RESYNC;
         player.tick = claimedTick;
         player.sinceAuthInput = System.currentTimeMillis();
 
@@ -57,7 +64,7 @@ public class AuthInputPackets extends TeleportHandler implements PacketListener 
         if (timer != null && timer.isInvalid()) {
             String detail = "tick=" + player.tick + " packetTick=" + packet.getTick()
                     + " pos=" + packet.getPosition() + " delta=" + packet.getDelta();
-            boolean rollback = PacPaperBridge.isRollbackEnabled();
+            boolean rollback = PacPaperBridge.isRollbackEnabled(player.getSession().uuid());
             if (rollback) event.setCancelled(true);
             PacPaperBridge.reportDiagnostic(player.getSession().uuid(), "timer", 1, detail);
             if (PacPaperBridge.isRecordingOnly()) {
@@ -91,10 +98,15 @@ public class AuthInputPackets extends TeleportHandler implements PacketListener 
             return;
         }
 
+        if (player.isDynamicMovementExempt()
+                || !PacPaperBridge.isRollbackEnabled(player.getSession().uuid())) {
+            player.getTeleportUtil().discardQueuedRewinds();
+        }
         if (player.getTeleportUtil().isTeleporting()) {
             this.processQueuedTeleports(player, packet);
         } else {
-            if (player.isMovementExempted()) {
+            if (player.isMovementExempted() || player.isDynamicMovementExempt()
+                    || player.predictionResync) {
                 processExempted(player);
             } else {
                 if (!player.inLoadingScreen && player.sinceLoadingScreen >= 2 || player.unvalidatedTickEnd.lengthSquared() > 0) {
@@ -112,7 +124,8 @@ public class AuthInputPackets extends TeleportHandler implements PacketListener 
         // There isn't much room to abuse considering they're not loaded in any way... and the position is validated so
         // the player can't just send a position 100000 blocks out to avoid for eg: velocity.
         // TODO: Test properly uhhhh in some cases, I'm too lazy to care.
-        if (player.insideUnloadedChunk) {
+        if (player.insideUnloadedChunk
+                && PacPaperBridge.isRollbackEnabled(player.getSession().uuid())) {
             player.getTeleportUtil().teleport(player.getTeleportUtil().getLastKnowValid());
         }
 

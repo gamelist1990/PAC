@@ -122,6 +122,10 @@ public final class BoarDefaultAcknowledgments {
     }
 
     private static void handleBlockEntityUpdate(BoarPlayer player, BlockEntityUpdateAck ack) {
+        String id = ack.data().getString("id");
+        if ("PistonArm".equals(id) || "MovingBlock".equals(id)) {
+            player.markDynamicMovement(ack.position());
+        }
         final BoarChunk chunk = player.compensatedWorld.getChunk(ack.position().getX() >> 4, ack.position().getZ() >> 4);
         if (chunk == null) {
             return;

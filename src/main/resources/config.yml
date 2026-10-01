@@ -121,6 +121,8 @@ detectors:
     # Also controls Geyser movement prediction and rewinds through PAC's bridge.
     enabled: true
     ban-enabled: true
+    # Live Bedrock corrections also require punishments.rollback-enabled.
+    cancel: true
     alert-score-threshold: 1
   crash-chest:
     enabled: true

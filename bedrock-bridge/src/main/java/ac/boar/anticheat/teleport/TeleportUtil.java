@@ -1,6 +1,7 @@
 package ac.boar.anticheat.teleport;
 
 import ac.boar.anticheat.Boar;
+import org.pexserver.pac.bridge.PacPaperBridge;
 import ac.boar.anticheat.ack.types.TeleportAcceptAck;
 import ac.boar.anticheat.data.input.PredictionData;
 import ac.boar.anticheat.data.input.TickData;
@@ -94,6 +95,10 @@ public class TeleportUtil {
     }
 
     public void rewind(final RewindHistory rewind) {
+        if (!PacPaperBridge.isRollbackEnabled(player.getSession().uuid())) {
+            discardQueuedRewinds();
+            return;
+        }
         if (player.isVehicleTransitionExempt()) {
             Boar.debug("[movement-debug] skipped rewind reason=vehicle-transition tick="
                     + rewind.tick(), Boar.DebugMessage.WARNING);

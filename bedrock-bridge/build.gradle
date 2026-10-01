@@ -12,6 +12,9 @@ repositories {
 }
 
 dependencies {
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.11.4'
+    testRuntimeOnly 'org.cloudburstmc.protocol:bedrock-connection:3.0.0.Beta12-SNAPSHOT'
     compileOnly 'org.geysermc.geyser:api:2.11.2-SNAPSHOT'
     compileOnly('org.geysermc.geyser:core:2.11.2-SNAPSHOT') { transitive = false }
     compileOnly 'org.cloudburstmc.protocol:bedrock-connection:3.0.0.Beta12-SNAPSHOT'
@@ -35,3 +38,5 @@ tasks.shadowJar {
     relocate 'org.yaml.snakeyaml', 'ac.boar.shaded.snakeyaml'
 }
 tasks.build { dependsOn tasks.shadowJar }
+
+tasks.test { useJUnitPlatform() }

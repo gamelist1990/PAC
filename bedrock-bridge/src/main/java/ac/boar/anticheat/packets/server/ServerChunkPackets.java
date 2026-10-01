@@ -150,6 +150,10 @@ public class ServerChunkPackets implements PacketListener {
                 player.queueAcknowledgment(new BlockUpdateAck(entry.getPosition(), 1, entry.getDefinition().getRuntimeId()));
             }
         } else if (event.getPacket() instanceof BlockEntityDataPacket packet) {
+            String id = packet.getData().getString("id");
+            if ("PistonArm".equals(id) || "MovingBlock".equals(id)) {
+                player.markDynamicMovement(packet.getBlockPosition());
+            }
             player.sendLatencyStack(new BlockEntityUpdateAck(packet.getBlockPosition(), packet.getData()));
         }
     }

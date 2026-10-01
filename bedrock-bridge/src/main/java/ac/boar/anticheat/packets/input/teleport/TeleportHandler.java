@@ -93,6 +93,26 @@ public class TeleportHandler {
             return;
         }
 
+        long replayTicks = player.tick - rewind.getTick();
+        var history = player.getTeleportUtil().getAuthInputHistory();
+        // Never replay backwards or reconstruct missing inputs using the latest
+        // packet. Delayed acknowledgments can outlive the bounded input history.
+        if (replayTicks <= 0 || replayTicks > Math.min(200, history.size() + 1)) {
+            player.predictionResync = true;
+            processExempted(player);
+            return;
+        }
+        for (long tick = rewind.getTick() + 1; tick < player.tick; tick++) {
+            if (!history.containsKey(tick)) {
+                player.predictionResync = true;
+                processExempted(player);
+                return;
+            }
+        }
+
+        var currentFlags = player.getFlagTracker().cloneFlags();
+        var currentAttributes = player.cloneAttributes();
+        var currentDimensions = player.dimensions;
         player.onGround = rewind.isOnGround();
         player.velocity = rewind.getTickEnd();
         player.setPos(rewind.getPosition().down(player.getYOffset()));
@@ -116,15 +136,20 @@ public class TeleportHandler {
             currentTick++;
 
             if (currentTick == player.tick) {
+                player.getFlagTracker().set(player, currentFlags, false);
+                player.attributes.clear();
+                player.attributes.putAll(currentAttributes);
+                player.dimensions = currentDimensions;
                 LegacyAuthInputPackets.processAuthInput(player, packet, true);
                 LegacyAuthInputPackets.updateUnvalidatedPosition(player, packet);
             } else if (player.getTeleportUtil().getAuthInputHistory().containsKey(currentTick)) {
                 final TickData data = player.getTeleportUtil().getAuthInputHistory().get(currentTick);
                 LegacyAuthInputPackets.processAuthInput(player, data.packet(), false);
-                LegacyAuthInputPackets.updateUnvalidatedPosition(player, packet);
+                LegacyAuthInputPackets.updateUnvalidatedPosition(player, data.packet());
 
                 // Reverted back to the old flags and dimensions and attribute.
                 player.getFlagTracker().set(player, data.flags(), false);
+                player.attributes.clear();
                 player.attributes.putAll(data.attributes());
 
                 // TODO: Is this really the case.
@@ -139,6 +164,10 @@ public class TeleportHandler {
         player.setPos(player.unvalidatedPosition);
         player.getTeleportUtil().resetPredictionBaseline(
             player.unvalidatedPosition);
+
+        // Teleport packets use eye coordinates; the prediction anchor uses feet.
+        player.getTeleportUtil().setLastKnowValid(
+                player.unvalidatedPosition.up(player.getYOffset()));
 
         // Clear velocity out manually since we haven't handled em.
         player.certainVelocity = null;

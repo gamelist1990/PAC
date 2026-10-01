@@ -67,6 +67,9 @@ public final class BoarPlayer extends PlayerData {
     private final InventoryAccessor inventoryAccessor;
 
     public long runtimeEntityId;
+    public final ac.boar.anticheat.prediction.PredictionTickWindow predictionTicks =
+            new ac.boar.anticheat.prediction.PredictionTickWindow();
+    public boolean predictionResync;
 
     @Getter
     private final TeleportUtil teleportUtil = new TeleportUtil(this);
@@ -96,6 +99,7 @@ public final class BoarPlayer extends PlayerData {
     private final Map<UUID, MessageRecipient> trackedDebugPlayers = new ConcurrentHashMap<>();
 
     public ScheduledFuture<?> future;
+    private long dynamicMovementUntilNs;
     private long vehicleExemptUntilTick;
     private long strongVerticalImpulseUntilTick;
     private long vehicleLinkGeneration;
@@ -172,6 +176,19 @@ public final class BoarPlayer extends PlayerData {
         } catch (Exception ignored) {}
 
         return this.abilities.contains(Ability.MAY_FLY) || this.getFlagTracker().isFlying() || this.getFlagTracker().isWasFlying();
+    }
+
+    /** Only server-observed moving blocks near the player's body grant grace. */
+    public void markDynamicMovement(Vector3i block) {
+        if (Math.abs(unvalidatedPosition.x - block.getX() - 0.5) <= 3.0
+                && Math.abs(unvalidatedPosition.y - block.getY()) <= 3.0
+                && Math.abs(unvalidatedPosition.z - block.getZ() - 0.5) <= 3.0) {
+            dynamicMovementUntilNs = System.nanoTime() + 750_000_000L;
+        }
+    }
+
+    public boolean isDynamicMovementExempt() {
+        return dynamicMovementUntilNs != 0 && System.nanoTime() < dynamicMovementUntilNs;
     }
 
     public void markVehicleTransition() {
