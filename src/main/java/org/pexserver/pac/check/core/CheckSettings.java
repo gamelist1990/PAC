@@ -34,7 +34,7 @@ public final class CheckSettings {
                 // client packet as well as report it. Otherwise the violation
                 // can be logged while the movement itself is still accepted.
                 case "crash-chest", "scaffold", "reach", "critical-packet", "inventory-move", "invalid-movement", "invalid-pitch",
-                        "packet-flood", "nuker", "anti-hunger", "motion-prediction", "air-prediction", "timer-prediction",
+                        "packet-flood", "nuker", "anti-hunger", "no-fall", "velocity-response", "motion-prediction", "air-prediction", "timer-prediction",
                         "surface-prediction", "water-flow-prediction", "water-motion-prediction", "noclip",
                         "boat-flight", "vehicle-movement", "kill-aura", "bedrock-prediction" -> true;
                 default -> false;

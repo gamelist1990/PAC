@@ -2,7 +2,7 @@ alerts:
   enabled: true
   prefix: '&8[&cPAC&8] &7'
   minimum-interval-ms: 1000
-config-version: 17
+config-version: 18
 api:
   # External plugins can only change PAC settings when this is true.
   control-authority: false
@@ -14,6 +14,18 @@ killaura:
   # MX's default keeps its cinematic-sensitive modules active unless explicitly ignored.
   ignore-cinematic: false
 detectors:
+  no-fall:
+    enabled: true
+    cancel: true
+    ban-enabled: false
+    kick-enabled: false
+    alert-score-threshold: 1
+  velocity-response:
+    enabled: true
+    cancel: true
+    ban-enabled: false
+    kick-enabled: false
+    alert-score-threshold: 1
   # Standard detectors start enabled. Xray remains opt-in; noclip prevention is enabled but does not auto-BAN by default.
   # Set ban-enabled: false on an individual detector to disable its automatic BAN.
   # Each detector also accepts kick-enabled: false and kick-score-threshold: 10.

@@ -6,6 +6,12 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RearAttackSequenceTest {
+    @Test void sameTickNetworkBurstDoesNotCountAsIndependentEvidence() {
+        var sequence = new RearAttackSequence();
+        for (int i = 0; i < 20; i++) assertFalse(sequence.record(true, 100));
+        assertTrue(sequence.record(true, 101));
+    }
+
     @Test void onlyTwoConsecutiveRearHitsConfirmAnAttackViewViolation() {
         RearAttackSequence sequence = new RearAttackSequence();
 
