@@ -5,7 +5,6 @@ import ac.boar.anticheat.util.ReferencePopulator;
 import ac.boar.mappings.item.Item;
 import ac.boar.mappings.item.ItemMappings;
 import org.geysermc.geyser.item.Items;
-import org.geysermc.geyser.registry.Registries;
 
 import java.lang.reflect.Field;
 import java.util.ArrayList;
@@ -59,11 +58,20 @@ public final class GeyserItemMappings implements ItemMappings {
     }
 
     public static void finalizeItemMappings(ReferencePopulator<Item> populator) {
-        for (org.geysermc.geyser.item.type.Item item : Registries.JAVA_ITEMS.get()) {
-            String key = item.javaIdentifier();
-            Reference<Item> ref = populator.get(key);
-            if (ref != null) {
-                populator.populate(key, new GeyserItem(item));
+        for (Field field : Items.class.getDeclaredFields()) {
+            try {
+                Object object = field.get(null);
+                if (!(object instanceof org.geysermc.geyser.item.type.Item item)) {
+                    continue;
+                }
+
+                String key = "minecraft:" + field.getName().toLowerCase(Locale.ROOT);
+                Reference<Item> ref = populator.get(key);
+                if (ref != null) {
+                    populator.populate(key, new GeyserItem(item));
+                }
+            } catch (IllegalAccessException e) {
+                throw new IllegalStateException("Unable to read Geyser item registry field " + field.getName(), e);
             }
         }
     }
