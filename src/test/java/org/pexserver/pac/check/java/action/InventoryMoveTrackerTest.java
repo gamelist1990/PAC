@@ -7,6 +7,18 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.*;
 
 class InventoryMoveTrackerTest {
+    @Test void openingOrClosingContainerCannotImmediatelyProveAnImpossibleAction() {
+        var tracker = new InventoryMoveTracker();
+        UUID player = UUID.randomUUID();
+        tracker.setPlayerInventoryOpen(player, true);
+        assertFalse(tracker.establishedContainerOpen(player, 100));
+        tracker.setContainerOpen(player, true, 100);
+        assertFalse(tracker.establishedContainerOpen(player, 100));
+        assertFalse(tracker.establishedContainerOpen(player, 101));
+        assertTrue(tracker.establishedContainerOpen(player, 102));
+        tracker.setContainerOpen(player, false, 103);
+        assertFalse(tracker.establishedContainerOpen(player, 104));
+    }
     @Test void localInventoryInteractionEnablesMovementDetectionUntilClose() {
         var tracker = new InventoryMoveTracker();
         UUID player = UUID.randomUUID();

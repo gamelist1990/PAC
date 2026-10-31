@@ -9,6 +9,7 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.WeakHashMap;
 import org.bukkit.Location;
+import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -48,6 +49,10 @@ public final class InventoryMoveCheck extends AbstractCheck implements EventChec
    /** Server-owned view of whether the vanilla client should still be inside an inventory UI. */
    public boolean inventoryOpen(UUID uuid) {
       return uuid != null && this.tracker.inventoryOpen(uuid);
+   }
+
+   public boolean establishedContainerOpen(UUID uuid) {
+      return uuid != null && this.tracker.establishedContainerOpen(uuid, Bukkit.getCurrentTick());
    }
 
    public InventoryMoveTracker.Input onInput(UUID uuid, PacketReceiveEvent event, WrapperPlayClientPlayerInput packet, long now) {
@@ -163,7 +168,7 @@ public final class InventoryMoveCheck extends AbstractCheck implements EventChec
       if (event.getPlayer() instanceof Player player) {
          // A server container replaces the local player-inventory screen.
          this.tracker.setPlayerInventoryOpen(player.getUniqueId(), false);
-         this.tracker.setContainerOpen(player.getUniqueId(), true);
+         this.tracker.setContainerOpen(player.getUniqueId(), true, Bukkit.getCurrentTick());
       }
    }
 

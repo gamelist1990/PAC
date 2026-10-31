@@ -16,10 +16,23 @@ public final class InventoryMoveTracker {
    }
 
    public void setContainerOpen(UUID uuid, boolean open) {
+      setContainerOpen(uuid, open, 0);
+   }
+
+   public void setContainerOpen(UUID uuid, boolean open, int tick) {
       InventoryMoveTracker.State state = this.states.computeIfAbsent(uuid, ignored -> new InventoryMoveTracker.State());
       synchronized (state) {
          state.containerOpen = open;
+         state.containerOpenedTick = tick;
          clearIfClosed(state);
+      }
+   }
+
+   public boolean establishedContainerOpen(UUID uuid, int tick) {
+      InventoryMoveTracker.State state = this.states.get(uuid);
+      if (state == null) return false;
+      synchronized (state) {
+         return state.containerOpen && (long) tick - state.containerOpenedTick >= 2;
       }
    }
 
@@ -184,6 +197,7 @@ public final class InventoryMoveTracker {
    private static final class State {
       boolean playerInventoryOpen;
       boolean containerOpen;
+      int containerOpenedTick;
       boolean jumpDown;
       boolean directionalIntent;
       boolean jumpIntent;

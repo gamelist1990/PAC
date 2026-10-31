@@ -25,7 +25,6 @@ public final class MotionPredictionCheck extends AbstractCheck implements Packet
         final PredictionCorrectionLock correctionLock = new PredictionCorrectionLock();
         final VanillaPositionBurst positionBurst = new VanillaPositionBurst();
         final RapidPositionJumpWindow rapidJump = new RapidPositionJumpWindow();
-        final EntityPushSuppressionWindow entityPushSuppression = new EntityPushSuppressionWindow();
         double buffer;
         long serverMotionSequence;
         boolean serverMotionActive;
@@ -224,28 +223,9 @@ public final class MotionPredictionCheck extends AbstractCheck implements Packet
                 context.cancel(this);
                 return;
             }
-            if (context.flying().hasPositionChanged() && previous != null
-                    && !context.timingUncertain() && !collisionGeometryUncertain
-                    && context.externalImpulse() == null && serverMotionAtEntry == null
-                    && !context.plugin().recentExternalMotion(context.uuid())
-                    && !context.plugin().recentPluginVelocity(context.uuid())) {
-                var pushSample = state.entityPushSuppression.accept(previousMotion,
-                        location.getX() - previous.x(), location.getZ() - previous.z(),
-                        previous.x(), previous.y(), previous.z(),
-                        environment, collisions, context.inputs());
-                if (pushSample.flagged()) {
-                    state.speedEvidence.reset();
-                    state.speedEnvelope.reset();
-                    flagLimited(context, () -> String.format(Locale.ROOT,
-                            "server-confirmed entity push repeatedly suppressed: push=%.3f withPushOffset=%.3f noPushOffset=%.3f streak=%d",
-                            pushSample.pushMagnitude(), pushSample.withPushOffset(),
-                            pushSample.withoutPushOffset(), pushSample.streak()));
-                    correct(context, state, previous, previousMotion, true);
-                    return;
-                }
-            } else {
-                state.entityPushSuppression.reset();
-            }
+            // Nearby server-side entities do not prove the client saw the same
+            // contact on this tick. Keep collision allowances in the movement
+            // model, but do not punish missing predicted entity pushes.
 
             SustainedSpeedEnvelope.Sample envelopeSample = null;
             if (context.flying().hasPositionChanged() && !collisionGeometryUncertain) {
