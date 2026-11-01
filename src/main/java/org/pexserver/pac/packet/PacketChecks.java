@@ -50,6 +50,15 @@ public final class PacketChecks implements PacketListener, Listener {
     private final ConcurrentHashMap<UUID, org.pexserver.pac.movement.MovementLatencyWindow> latencyWindows = new ConcurrentHashMap<>();
     private final JavaInputCapture inputs = new JavaInputCapture();
     private final ExternalMotionTracker externalMotion = new ExternalMotionTracker();
+    private record FishingPull(int hookId,long sequence,long at) { }
+    private final ConcurrentHashMap<UUID,FishingPull> fishingPulls=new ConcurrentHashMap<>();
+    public boolean consumeFishingPull(UUID uuid,int hookId,long now) {
+        var pull=fishingPulls.get(uuid);
+        if(pull==null||pull.hookId()!=hookId)return false;
+        fishingPulls.remove(uuid,pull);
+        var impulse=externalMotion.current(uuid,now);
+        return now>=pull.at()&&now-pull.at()<=200&&impulse!=null&&impulse.sequence()==pull.sequence();
+    }
     private final ConcurrentHashMap<UUID, Long> motionSequencesDelivered = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, ServerMotionGrant> serverMotionGrants = new ConcurrentHashMap<>();
     private final AtomicLong nextServerMotionGrant = new AtomicLong();
@@ -111,8 +120,10 @@ public final class PacketChecks implements PacketListener, Listener {
         // exact same additive pull. Tracking it as additive motion lets the
         // existing knockback-response replay distinguish the legitimate pull
         // from clients that suppress only the local entity-status effect.
-        externalMotion.addImpulse(target.getUniqueId(),
-                impulse.dx(), impulse.dy(), impulse.dz(), System.currentTimeMillis());
+        long now=System.currentTimeMillis();
+        externalMotion.addImpulse(target.getUniqueId(),impulse.dx(),impulse.dy(),impulse.dz(),now);
+        var recorded=externalMotion.current(target.getUniqueId(),now);
+        if(recorded!=null)fishingPulls.put(target.getUniqueId(),new FishingPull(event.getHook().getEntityId(),recorded.sequence(),now));
     }
 
     static MotionPredictor.Motion fishingPull(double ownerX, double ownerY, double ownerZ,
@@ -179,6 +190,12 @@ public final class PacketChecks implements PacketListener, Listener {
 
     @Override public void onPacketReceive(PacketReceiveEvent event) {
         UUID eventUuid = event.getUser().getUUID();
+        if (eventUuid != null && !plugin.isBedrockPlayer(eventUuid)
+                && event.getPacketType() == PacketType.Play.Client.PONG
+                && motionReply(eventUuid,new com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientPong(event).getId())) {
+            event.setCancelled(true);
+            return;
+        }
         if (eventUuid != null && !plugin.isBedrockPlayer(eventUuid)
                 && plugin.checks().get("packet-flood") instanceof PacketFloodCheck flood
                 && flood.inspectDecodedPacket(plugin, eventUuid, event, System.nanoTime())) {
@@ -266,8 +283,22 @@ public final class PacketChecks implements PacketListener, Listener {
         }
         if (!WrapperPlayClientPlayerFlying.isFlying(event.getPacketType())) return;
         UUID uuid = eventUuid;
-        if (uuid == null || plugin.isExempt(uuid)) return;
+        if (uuid == null) return;
         WrapperPlayClientPlayerFlying flying = new WrapperPlayClientPlayerFlying(event);
+        // Malformed coordinates/rotations must never reach predictors, even when a
+        // detector is disabled. Cancellation alone still lets later checks reset
+        // their state or seed it from hostile numbers.
+        if (org.pexserver.pac.check.java.packet.InvalidMovementCheck.malformed(flying)) {
+            event.setCancelled(true);
+            if (plugin.checks().get("invalid-movement") instanceof org.pexserver.pac.check.java.packet.InvalidMovementCheck invalid)
+                invalid.rejectMalformed(plugin, uuid);
+            return;
+        }
+        if (plugin.isExempt(uuid)) return;
+        if (!plugin.isBedrockPlayer(uuid)) {
+            plugin.combatScene().movement(uuid);
+            plugin.combatScene().barrier(event.getUser());
+        }
         if (plugin.checks().get("exploit-actions") instanceof ExploitActionCheck exploitActions
                 && plugin.enabled(uuid, exploitActions)) {
             var movement = flying.getLocation();
@@ -307,7 +338,11 @@ public final class PacketChecks implements PacketListener, Listener {
         }
     }
 
+    private boolean motionReply(UUID uuid,int id) {
+        return plugin.velocityResponse().reply(uuid,id)||plugin.combatScene().acknowledge(uuid,id);
+    }
     private void handleAttackPacket(PacketReceiveEvent event, UUID uuid, int entityId) {
+        plugin.velocityResponse().attack(uuid);
         if (plugin.checks().get("critical-packet") instanceof CriticalPacketCheck critical)
             critical.onAttackPacket(uuid, event);
         if (!event.isCancelled()
@@ -322,6 +357,7 @@ public final class PacketChecks implements PacketListener, Listener {
     }
 
     public void forget(UUID uuid) {
+        fishingPulls.remove(uuid);
         inputs.forget(uuid);
         latencyWindows.remove(uuid);
         externalMotion.forget(uuid);

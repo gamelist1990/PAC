@@ -19,6 +19,7 @@ final class CombatEvidenceSequence {
             reset();
             return false;
         }
+        if (hasLastTick && tick == lastTick) return false;
         count = hasLastTick && tick >= lastTick && tick - lastTick <= maximumTickGap
                 ? Math.min(required, count + 1) : 1;
         lastTick = tick;

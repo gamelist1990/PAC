@@ -10,6 +10,18 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
 class CombatTargetHistoryTest {
+    @Test void delayedClientPoseUsesRecentDimensionsWithoutAddingTravelToWidth() {
+        var history = new CombatTargetHistory();
+        UUID target = UUID.randomUUID(), world = UUID.randomUUID();
+        history.sample(target, world, new BoundingBox(-.3, 64, -.3, .3, 65.8, .3), 1000);
+        var crouched = new BoundingBox(9.7, 64, -.3, 10.3, 65.5, .3);
+        for (long at=1050;at<=3000;at+=50) history.sample(target, world, crouched, at);
+        var shape = history.relativeShape(target, world, crouched,
+                new CombatTargetHistory.VectorOffset(10,64,0), 3000);
+        assertEquals(.6, shape.getWidthX(), 1e-9);
+        assertEquals(1.8, shape.getHeight(), 1e-9);
+    }
+
     @Test void reportedPingNeverGrantsReachRewind() {
         assertEquals(0, CombatTargetHistory.trustedRewindMillis(0));
         assertEquals(0, CombatTargetHistory.trustedRewindMillis(100));

@@ -12,6 +12,7 @@ final class RearAttackSequence {
             reset();
             return false;
         }
+        if (hasLastTick && tick == lastTick) return false;
         count = hasLastTick && tick >= lastTick && tick - lastTick <= WINDOW_TICKS
                 ? Math.min(2, count + 1) : 1;
         lastTick = tick;

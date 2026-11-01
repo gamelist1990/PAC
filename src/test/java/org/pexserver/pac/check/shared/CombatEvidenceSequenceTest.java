@@ -6,6 +6,12 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class CombatEvidenceSequenceTest {
+    @Test void sameTickNetworkBurstDoesNotCountAsIndependentEvidence() {
+        var sequence = new CombatEvidenceSequence(2, 20);
+        for (int i = 0; i < 20; i++) assertFalse(sequence.record(true, 100));
+        assertTrue(sequence.record(true, 101));
+    }
+
     @Test void requiresConsecutiveEvidenceWithinTickWindow() {
         var sequence = new CombatEvidenceSequence(2, 20);
         assertFalse(sequence.record(true, 100));
